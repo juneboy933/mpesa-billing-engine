@@ -1,5 +1,5 @@
-import { Body, Controller, Post } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Body, Controller, Post, Get } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiSecurity } from '@nestjs/swagger';
 import { MerchantsService } from './merchants.service';
 import { CreateMerchantDto } from './dto/create-merchant.dto';
 import { Public } from '../common/decorators/public.decorator';
@@ -16,4 +16,12 @@ export class MerchantsController {
     async create(@Body() dto: CreateMerchantDto) {
         return await this.merchantsService.create(dto);
     }
+
+    // @Get()
+    // @ApiSecurity('x-api-key')
+    // @ApiOperation({ summary: 'Get all merchants (for testing purposes)' })
+    // @ApiResponse({ status: 200, description: 'List of merchants' })
+    // async findAll() {
+    //     return await this.merchantsService.findAll();
+    // }
 }
