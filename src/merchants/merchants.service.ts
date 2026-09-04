@@ -38,9 +38,9 @@ export class MerchantsService {
         });
     }
 
-    async findAll() {
-        return await this.prisma.merchant.findMany({ select: merchantSelect });
-    }
+    // async findAll() {
+    //     return await this.prisma.merchant.findMany({ select: merchantSelect });
+    // }
 
     async findAllForAuth() {
         return await this.prisma.merchant.findMany({
