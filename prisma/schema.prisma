@@ -1,0 +1,100 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum BillingInterval {
+  DAILY
+  WEEKLY
+  MONTHLY
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  RETRYING
+  PAST_DUE
+  CANCELLED
+}
+
+enum PaymentAttemptStatus {
+  SCHEDULED
+  INITIATED
+  PENDING_CONFIRMATION
+  SUCCEEDED
+  FAILED
+  TIMED_OUT
+}
+
+model Merchant {
+  id String @id @default(uuid())
+  name String
+  apiKeyHash String @unique
+  webhookUrl String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  plans Plan[]
+  subscriptions Subscription[]
+}
+
+model Plan {
+  id String @id @default(uuid())
+  name String
+  amount Decimal @db.Decimal(12,2)
+  interval BillingInterval @default(MONTHLY)
+  createdAt DateTime @default(now())
+
+  merchantId String
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  subscriptions Subscription[]
+
+  @@index([merchantId])
+}
+
+model Subscription {
+  id String @id @default(uuid())
+  customerPhone String 
+  status SubscriptionStatus @default(ACTIVE)
+  nextBillingDate DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  merchantId String
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  planId String
+  plan Plan @relation(fields: [planId], references: [id])
+
+  paymentAttempts PaymentAttempt[]
+
+  @@index([merchantId])
+  @@index([customerPhone])
+  @@index([ status, nextBillingDate])
+}
+
+model PaymentAttempt {
+  id String @id @default(uuid())
+  status PaymentAttemptStatus @default(SCHEDULED)
+  checkoutId String? @unique
+  idempotencyKey String @unique
+  attemptNumber Int @default(1)
+  amount Decimal @db.Decimal(12,2)
+  createdAt DateTime @default(now())
+  resolvedAt DateTime?
+
+  subscriptionId String
+  subscription Subscription @relation(fields: [subscriptionId], references: [id])
+
+  @@index([subscriptionId])
+  @@index([status]) 
+}
