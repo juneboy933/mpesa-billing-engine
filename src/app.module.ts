@@ -7,6 +7,7 @@ import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
 import { MerchantsModule } from './merchants/merchants.module';
 import { ApiKeyGuard } from './common/guards/api-key/api-key.guard';
+import { PlansModule } from './plans/plans.module';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -24,6 +25,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     }),
     PrismaModule,
     MerchantsModule,
+    PlansModule,
   ],
   controllers: [AppController],
   providers: [
