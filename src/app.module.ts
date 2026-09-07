@@ -8,6 +8,7 @@ import { PrismaModule } from './prisma/prisma.module';
 import { MerchantsModule } from './merchants/merchants.module';
 import { ApiKeyGuard } from './common/guards/api-key/api-key.guard';
 import { PlansModule } from './plans/plans.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -26,8 +27,9 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     PrismaModule,
     MerchantsModule,
     PlansModule,
+    SubscriptionsModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController ],
   providers: [
     AppService,
     {provide: APP_GUARD, useClass: ApiKeyGuard}
