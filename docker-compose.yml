@@ -28,9 +28,25 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisData:/data
+    networks:
+      - billing-net
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 networks:
   billing-net:
     driver: bridge
 
 volumes:
-  pgdata:  
+  pgdata: 
+  redisData:  
