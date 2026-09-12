@@ -1,11 +1,10 @@
-import { BadRequestException, Inject, Injectable, InternalServerErrorException, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Inject, Injectable, InternalServerErrorException, Logger, ServiceUnavailableException } from '@nestjs/common';
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../redis/redis.module';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 import { CreateStkDto } from '../dto/stk.dto';
 import { normalizePhone } from '../../common/utils/phone.util';
-import { PrismaService } from '../../prisma/prisma.service';
 
 export interface StkResponse {
     MerchantRequestID: string;
@@ -82,7 +81,7 @@ export class DarajaService {
         const passkey = this.config.get('PASSKEY');
 
         if(!shortCode || !passkey) {
-            throw new ServiceUnavailableException('Missing shortCode or passkey in your environment variables');
+            throw new InternalServerErrorException('Missing shortCode or passkey in your environment variables');
         }
 
         const timestamp = this.generateTimestamp();

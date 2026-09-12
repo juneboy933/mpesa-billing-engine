@@ -4,9 +4,9 @@ import { WebhooksController } from './webhooks/webhooks.controller';
 import { DarajaModule } from './daraja/daraja.module';
 
 @Module({
+  imports: [DarajaModule],
   providers: [PaymentsService],
   controllers: [WebhooksController],
-  imports: [DarajaModule],
   exports: [PaymentsService],
 })
 export class PaymentsModule {}
