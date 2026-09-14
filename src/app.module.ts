@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { createObserveModule } from '@nestjs/observe';
-import { ConfigModule } from '@nestjs/config';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -11,6 +11,8 @@ import { PlansModule } from './plans/plans.module';
 import { SubscriptionsModule } from './subscriptions/subscriptions.module';
 import { RedisModule } from './redis/redis.module';
 import { PaymentsModule } from './payments/payments.module';
+import { BillingModule } from './billing/billing.module';
+import { BullModule } from '@nestjs/bullmq';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -26,12 +28,21 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     ConfigModule.forRoot({
       isGlobal: true,
     }),
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        connection: {
+          url: config.get('REDIS_URL'),
+        },
+      }),
+    }),
     PrismaModule,
     MerchantsModule,
     PlansModule,
     SubscriptionsModule,
     RedisModule,
     PaymentsModule,
+    BillingModule,
   ],
   controllers: [AppController ],
   providers: [
