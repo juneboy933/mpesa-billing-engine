@@ -34,16 +34,24 @@ enum PaymentAttemptStatus {
   TIMED_OUT
 }
 
+enum WebhookDeliveryStatus {
+  PENDING
+  DELIVERED
+  FAILED
+}
+
 model Merchant {
   id String @id @default(uuid())
   name String
   apiKeyHash String @unique
   webhookUrl String?
+  webhookSecret String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   plans Plan[]
   subscriptions Subscription[]
+  webhookDeliveries WebhookDelivery[]
 }
 
 model Plan {
@@ -97,4 +105,20 @@ model PaymentAttempt {
 
   @@index([subscriptionId])
   @@index([status]) 
+}
+
+model WebhookDelivery {
+  id String @id @default(uuid())
+  eventType String
+  payload Json
+  status WebhookDeliveryStatus @default(PENDING)
+  attempts Int @default(0)
+  createdAt DateTime @default(now())
+  deliveredAt DateTime?
+
+  merchantId String
+  merchant Merchant @relation(fields: [merchantId], references: [id])
+
+  @@index([merchantId])
+  @@index([status])
 }
