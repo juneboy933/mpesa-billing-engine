@@ -4,6 +4,7 @@ import { PlansService } from '../plans/plans.service';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { normalizePhone } from '../common/utils/phone.util';
 import { SubscriptionStatus } from '../generated/prisma/enums';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const subscriptionSelect = {
     id: true,
@@ -18,6 +19,7 @@ export class SubscriptionsService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly plansService: PlansService,
+        private readonly notificationsService: NotificationsService,
     ) {}
 
     async createSubscription(merchantId: string, dto: CreateSubscriptionDto) {
@@ -65,6 +67,10 @@ export class SubscriptionsService {
             data: { status: SubscriptionStatus.CANCELLED },
             select: subscriptionSelect,
         });
+
+        await this.notificationsService.send(merchantId, 'subscription.cancelled', {
+            subscriptionId,
+        })
         return cancelledSubscription;
     }
 }

@@ -2,9 +2,10 @@ import { Module } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { WebhooksController } from './webhooks/webhooks.controller';
 import { DarajaModule } from './daraja/daraja.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [DarajaModule],
+  imports: [DarajaModule, NotificationsModule],
   providers: [PaymentsService],
   controllers: [WebhooksController],
   exports: [PaymentsService],
