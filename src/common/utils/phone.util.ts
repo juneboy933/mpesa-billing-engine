@@ -1,15 +1,21 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException } from '@nestjs/common';
 
 export const normalizePhone = (phone: string) => {
-    // remove all non-digit characters from the phone number
-    let normalized = phone.replace(/\D/g, '');
+  let normalized = phone.trim().replace(/\D/g, '');
 
-    // if the number starts with 0, remove it and add 254
-    if (normalized.startsWith('0')) {
-        normalized = '254' + normalized.slice(1);
-    }
-    if(!/^254[17]\d{8}$/.test(normalized)) {
-        throw new BadRequestException(`Invalid phone number format: ${phone}. Expected format: 2547XXXXXXXX or 2541XXXXXXXX`);
-    }
-    return normalized;
-}
+  if (normalized.startsWith('0')) {
+    normalized = '254' + normalized.slice(1);
+  } else if (normalized.startsWith('+254')) {
+    normalized = normalized.slice(1);
+  } else if (/^[17]\d{8}$/.test(normalized)) {
+    normalized = '254' + normalized;
+  }
+
+  if (!/^254[17]\d{8}$/.test(normalized)) {
+    throw new BadRequestException(
+      `Invalid phone number format: ${phone}. Expected format: 2547XXXXXXXX or 2541XXXXXXXX`,
+    );
+  }
+
+  return normalized;
+};
