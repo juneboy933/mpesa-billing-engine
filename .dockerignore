@@ -1,0 +1,16 @@
+node_modules
+dist
+src/generated
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+*.log
+npm-debug.log*
+coverage
+.vscode
+.idea
+Dockerfile
+docker-compose.yml
+*.tsbuildinfo
