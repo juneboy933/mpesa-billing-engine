@@ -7,6 +7,7 @@ import { UpdateMerchantDto } from './dto/update-merchant.dto';
 import { Request } from 'express';
 import { OnboardMerchantDto } from './dto/onboard-merchant.dto';
 import { SetupMpesaDto } from './dto/setup-mpesa.dto';
+import { CreatePlanDto } from '../plans/dto/create-plan.dto';
 
 interface AuthenticatedUser extends Request {
     merchant: { id: string },
@@ -23,6 +24,14 @@ export class MerchantsController {
     @ApiResponse({ status: 201, description: 'Merchant created; save the returned apiKey now' })
     async create(@Body() dto: CreateMerchantDto) {
         return await this.merchantsService.create(dto);
+    }
+
+    @Public()
+    @Post('onboarding/start')
+    @ApiOperation({ summary: 'Start guided merchant onboarding' })
+    @ApiResponse({ status: 201, description: 'Merchant created; continue with PayBill setup' })
+    async startOnboarding(@Body() dto: CreateMerchantDto) {
+        return await this.merchantsService.startOnboarding(dto);
     }
 
     @Get('analytics')
@@ -63,6 +72,22 @@ export class MerchantsController {
     @ApiResponse({ status: 200, description: 'M-Pesa setup status retrieved successfully' })
     async getMpesaSetupStatus(@Req() req: AuthenticatedUser) {
         return await this.merchantsService.getMpesaSetupStatus(req.merchant.id);
+    }
+
+    @Get('me/onboarding')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Get guided onboarding progress for the authenticated merchant' })
+    @ApiResponse({ status: 200, description: 'Onboarding progress retrieved successfully' })
+    async getOnboardingStatus(@Req() req: AuthenticatedUser) {
+        return await this.merchantsService.getOnboardingStatus(req.merchant.id);
+    }
+
+    @Post('me/onboarding/plan')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Create the first membership plan after PayBill setup' })
+    @ApiResponse({ status: 201, description: 'Onboarding completed with the first plan' })
+    async completeOnboarding(@Req() req: AuthenticatedUser, @Body() dto: CreatePlanDto) {
+        return await this.merchantsService.completeOnboarding(req.merchant.id, dto);
     }
 
     @Patch('me')

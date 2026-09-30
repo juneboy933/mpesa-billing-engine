@@ -13,6 +13,9 @@ describe('MerchantsController', () => {
     getDashboard: jest.Mock;
     setupMpesa: jest.Mock;
     getMpesaSetupStatus: jest.Mock;
+    startOnboarding: jest.Mock;
+    getOnboardingStatus: jest.Mock;
+    completeOnboarding: jest.Mock;
     update: jest.Mock;
     rotateWebhookSecret: jest.Mock;
     getAnalyticsSummary: jest.Mock;
@@ -28,6 +31,9 @@ describe('MerchantsController', () => {
       getDashboard: jest.fn(),
       setupMpesa: jest.fn(),
       getMpesaSetupStatus: jest.fn(),
+      startOnboarding: jest.fn(),
+      getOnboardingStatus: jest.fn(),
+      completeOnboarding: jest.fn(),
       update: jest.fn(),
       rotateWebhookSecret: jest.fn(),
       getAnalyticsSummary: jest.fn(),
@@ -129,6 +135,26 @@ describe('MerchantsController', () => {
       await expect(controller.getMpesaSetupStatus(req)).resolves.toBe(status);
       expect(merchantsService.setupMpesa).toHaveBeenCalledWith('m1', dto);
       expect(merchantsService.getMpesaSetupStatus).toHaveBeenCalledWith('m1');
+    });
+  });
+
+  describe('guided onboarding', () => {
+    it('delegates start, status, and first-plan completion', async () => {
+      const req = mockRequest('m1');
+      const business = { name: 'Gym' };
+      const started = { merchant: { id: 'm1' }, onboarding: { nextStep: 'MPESA_SETUP' } };
+      const status = { merchantId: 'm1', nextStep: 'FIRST_PLAN' };
+      const completed = { status: 'COMPLETE', plan: { id: 'plan_1' } };
+      merchantsService.startOnboarding.mockResolvedValue(started);
+      merchantsService.getOnboardingStatus.mockResolvedValue(status);
+      merchantsService.completeOnboarding.mockResolvedValue(completed);
+
+      await expect(controller.startOnboarding(business as any)).resolves.toBe(started);
+      await expect(controller.getOnboardingStatus(req)).resolves.toBe(status);
+      await expect(controller.completeOnboarding(req, { name: 'Monthly Gym', amount: 1500 } as any)).resolves.toBe(completed);
+      expect(merchantsService.startOnboarding).toHaveBeenCalledWith(business);
+      expect(merchantsService.getOnboardingStatus).toHaveBeenCalledWith('m1');
+      expect(merchantsService.completeOnboarding).toHaveBeenCalledWith('m1', { name: 'Monthly Gym', amount: 1500 });
     });
   });
 

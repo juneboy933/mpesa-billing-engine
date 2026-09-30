@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlansService } from './plans.service';
@@ -16,6 +16,9 @@ describe('PlansService', () => {
     subscription: {
       findMany: jest.Mock;
     };
+    merchant: {
+      findUnique: jest.Mock;
+    };
   };
 
   beforeEach(async () => {
@@ -29,6 +32,9 @@ describe('PlansService', () => {
       },
       subscription: {
         findMany: jest.fn(),
+      },
+      merchant: {
+        findUnique: jest.fn(),
       },
     };
 
@@ -52,6 +58,7 @@ describe('PlansService', () => {
       createdAt: new Date('2024-01-01T00:00:00.000Z'),
     };
     prisma.plan.create.mockResolvedValue(createdPlan);
+    prisma.merchant.findUnique.mockResolvedValue({ id: 'merchant_1', mpesaSetupStatus: 'COMPLETED' });
 
     const result = await service.create('merchant_1', dto);
 
@@ -70,6 +77,14 @@ describe('PlansService', () => {
       },
     });
     expect(result).toBe(createdPlan);
+  });
+
+  it('rejects plan creation until the merchant completes M-Pesa setup', async () => {
+    prisma.merchant.findUnique.mockResolvedValue({ id: 'merchant_1', mpesaSetupStatus: 'PENDING' });
+
+    await expect(service.create('merchant_1', { name: 'Gold Plan', amount: 1200 }))
+      .rejects.toThrow(BadRequestException);
+    expect(prisma.plan.create).not.toHaveBeenCalled();
   });
 
   it('updates the plan when it belongs to the merchant', async () => {
