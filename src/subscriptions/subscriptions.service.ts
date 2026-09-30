@@ -13,7 +13,7 @@ const subscriptionSelect = {
     nextBillingDate: true,
     status: true,
     createdAt: true,
-}
+};
 
 @Injectable()
 export class SubscriptionsService {
@@ -36,12 +36,12 @@ export class SubscriptionsService {
                 nextBillingDate: new Date(),
             },
             select: subscriptionSelect,
-        })
+        });
 
         return {
             message: 'Subscription created successfully',
             data: subscription,
-        }
+        };
     }
 
     async getAllSubscriptions(merchantId: string) {
@@ -64,9 +64,11 @@ export class SubscriptionsService {
             where: { id: subscriptionId, merchantId },
             select: subscriptionSelect,
         });
+
         if (!subscription) {
             throw new NotFoundException('Subscription not found');
         }
+
         return subscription;
     }
 
@@ -80,7 +82,8 @@ export class SubscriptionsService {
 
         await this.notificationsService.send(merchantId, 'subscription.cancelled', {
             subscriptionId,
-        })
+        });
+
         return cancelledSubscription;
     }
 }
