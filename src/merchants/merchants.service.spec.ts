@@ -28,6 +28,7 @@ describe('MerchantsService', () => {
     };
     paymentAttempt: {
       count: jest.Mock;
+      findMany: jest.Mock;
     };
     $transaction: jest.Mock;
   };
@@ -57,6 +58,7 @@ describe('MerchantsService', () => {
       },
       paymentAttempt: {
         count: jest.fn(),
+        findMany: jest.fn(),
       },
     };
 
@@ -324,6 +326,72 @@ describe('MerchantsService', () => {
       prisma.merchant.update.mockRejectedValue(notFoundError);
 
       await expect(service.rotateWebhookSecret('missing-id')).rejects.toThrow(notFoundError);
+    });
+  });
+
+  describe('getAnalyticsSummary', () => {
+    it('returns merchant revenue, active subscriptions, and recovery metrics', async () => {
+      prisma.subscription.findMany.mockResolvedValue([
+        { id: 'sub_1', status: 'ACTIVE', plan: { amount: 1200 } },
+        { id: 'sub_2', status: 'RETRYING', plan: { amount: 800 } },
+        { id: 'sub_3', status: 'PAST_DUE', plan: { amount: 500 } },
+      ]);
+      prisma.paymentAttempt.findMany.mockResolvedValue([
+        { status: 'SUCCEEDED', amount: 1200, createdAt: new Date('2026-09-01T00:00:00.000Z') },
+        { status: 'SUCCEEDED', amount: 2000, createdAt: new Date('2026-09-05T00:00:00.000Z') },
+        { status: 'FAILED', amount: 1200, createdAt: new Date('2026-09-10T00:00:00.000Z') },
+      ]);
+
+      const result = await service.getAnalyticsSummary('m1');
+
+      expect(result).toMatchObject({
+        totalSubscriptions: 3,
+        activeSubscriptions: 1,
+        monthlyRecurringRevenue: 1200,
+        totalRevenue: 3200,
+        failedPayments: 1,
+        retryingSubscriptions: 2,
+      });
+      expect(result.revenueTrend).toHaveLength(7);
+      expect(result.revenueTrend[0].date).toBeDefined();
+    });
+  });
+
+  describe('getDashboardOverview', () => {
+    it('returns the merchant dashboard snapshot with key metrics and recent activity', async () => {
+      prisma.subscription.findMany.mockResolvedValue([
+        {
+          id: 'sub_1',
+          customerPhone: '+254700000001',
+          status: 'ACTIVE',
+          nextBillingDate: new Date('2026-09-15T00:00:00.000Z'),
+          plan: { amount: 1200 },
+          createdAt: new Date('2026-09-01T00:00:00.000Z'),
+        },
+        {
+          id: 'sub_2',
+          customerPhone: '+254700000002',
+          status: 'RETRYING',
+          nextBillingDate: new Date('2026-09-20T00:00:00.000Z'),
+          plan: { amount: 800 },
+          createdAt: new Date('2026-09-02T00:00:00.000Z'),
+        },
+      ]);
+      prisma.paymentAttempt.findMany.mockResolvedValue([
+        { status: 'SUCCEEDED', amount: 1400, createdAt: new Date('2026-09-10T00:00:00.000Z') },
+        { status: 'FAILED', amount: 1000, createdAt: new Date('2026-09-12T00:00:00.000Z') },
+      ]);
+
+      const result = await service.getDashboardOverview('m1');
+
+      expect(result).toMatchObject({
+        totalSubscriptions: 2,
+        activeSubscriptions: 1,
+        monthlyRecurringRevenue: 1200,
+        failedPayments: 1,
+      });
+      expect(result.recentSubscriptions).toHaveLength(2);
+      expect(result.recentSubscriptions[0].id).toBe('sub_1');
     });
   });
 });

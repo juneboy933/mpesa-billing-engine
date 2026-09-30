@@ -31,6 +31,22 @@ export class MerchantsController {
         return await this.merchantsService.getDashboard(req.merchant.id);
     }
 
+    @Get('analytics')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Get merchant revenue and retention analytics for the active account' })
+    @ApiResponse({ status: 200, description: 'Analytics summary retrieved successfully' })
+    async getAnalyticsSummary(@Req() req: AuthenticatedUser) {
+        return await this.merchantsService.getAnalyticsSummary(req.merchant.id);
+    }
+
+    @Get('dashboard/overview')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Get the merchant dashboard overview for the active account' })
+    @ApiResponse({ status: 200, description: 'Dashboard overview retrieved successfully' })
+    async getDashboardOverview(@Req() req: AuthenticatedUser) {
+        return await this.merchantsService.getDashboardOverview(req.merchant.id);
+    }
+
     @Patch('me')
     @ApiSecurity('api-key')
     @ApiOperation({ summary: 'Update merchant webhook URL'})

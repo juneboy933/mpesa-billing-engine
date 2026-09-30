@@ -137,4 +137,156 @@ export class MerchantsService {
             recentSubscriptions,
         };
     }
+
+    async getAnalyticsSummary(merchantId: string) {
+        const [subscriptions, paymentAttempts] = await Promise.all([
+            this.prisma.subscription.findMany({
+                where: { merchantId },
+                select: {
+                    id: true,
+                    status: true,
+                    plan: {
+                        select: {
+                            amount: true,
+                        },
+                    },
+                },
+            }),
+            this.prisma.paymentAttempt.findMany({
+                where: { subscription: { merchantId } },
+                select: {
+                    status: true,
+                    amount: true,
+                    createdAt: true,
+                },
+            }),
+        ]);
+
+        const activeSubscriptions = subscriptions.filter(
+            (subscription) => subscription.status === SubscriptionStatus.ACTIVE,
+        ).length;
+
+        const retryingSubscriptions = subscriptions.filter(
+            (subscription) =>
+                subscription.status === SubscriptionStatus.RETRYING ||
+                subscription.status === SubscriptionStatus.PAST_DUE,
+        ).length;
+
+        const monthlyRecurringRevenue = subscriptions
+            .filter((subscription) => subscription.status === SubscriptionStatus.ACTIVE)
+            .reduce((sum, subscription) => sum + Number(subscription.plan.amount), 0);
+
+        const successfulPayments = paymentAttempts.filter(
+            (attempt) => attempt.status === PaymentAttemptStatus.SUCCEEDED,
+        );
+        const totalRevenue = successfulPayments.reduce(
+            (sum, attempt) => sum + Number(attempt.amount),
+            0,
+        );
+
+        const failedPayments = paymentAttempts.filter(
+            (attempt) =>
+                attempt.status === PaymentAttemptStatus.FAILED ||
+                attempt.status === PaymentAttemptStatus.TIMED_OUT,
+        ).length;
+
+        const revenueTrend = this.buildRevenueTrend(paymentAttempts);
+
+        return {
+            totalSubscriptions: subscriptions.length,
+            activeSubscriptions,
+            monthlyRecurringRevenue,
+            totalRevenue,
+            failedPayments,
+            retryingSubscriptions,
+            revenueTrend,
+        };
+    }
+
+    async getDashboardOverview(merchantId: string) {
+        const [subscriptions, paymentAttempts] = await Promise.all([
+            this.prisma.subscription.findMany({
+                where: { merchantId },
+                select: {
+                    id: true,
+                    customerPhone: true,
+                    status: true,
+                    nextBillingDate: true,
+                    createdAt: true,
+                    plan: {
+                        select: {
+                            amount: true,
+                        },
+                    },
+                },
+                orderBy: {
+                    createdAt: 'desc',
+                },
+            }),
+            this.prisma.paymentAttempt.findMany({
+                where: { subscription: { merchantId } },
+                select: {
+                    status: true,
+                    amount: true,
+                },
+            }),
+        ]);
+
+        const activeSubscriptions = subscriptions.filter(
+            (subscription) => subscription.status === SubscriptionStatus.ACTIVE,
+        ).length;
+
+        const monthlyRecurringRevenue = subscriptions
+            .filter((subscription) => subscription.status === SubscriptionStatus.ACTIVE)
+            .reduce((sum, subscription) => sum + Number(subscription.plan.amount), 0);
+
+        const failedPayments = paymentAttempts.filter(
+            (attempt) =>
+                attempt.status === PaymentAttemptStatus.FAILED ||
+                attempt.status === PaymentAttemptStatus.TIMED_OUT,
+        ).length;
+
+        const totalRevenue = paymentAttempts
+            .filter((attempt) => attempt.status === PaymentAttemptStatus.SUCCEEDED)
+            .reduce((sum, attempt) => sum + Number(attempt.amount), 0);
+
+        return {
+            totalSubscriptions: subscriptions.length,
+            activeSubscriptions,
+            monthlyRecurringRevenue,
+            totalRevenue,
+            failedPayments,
+            recentSubscriptions: subscriptions.slice(0, 5).map((subscription) => ({
+                id: subscription.id,
+                customerPhone: subscription.customerPhone,
+                status: subscription.status,
+                nextBillingDate: subscription.nextBillingDate,
+                amount: Number(subscription.plan.amount),
+                createdAt: subscription.createdAt,
+            })),
+        };
+    }
+
+    private buildRevenueTrend(paymentAttempts: Array<{ status: string; amount: number | { toNumber?: () => number }; createdAt: Date }>) {
+        const trend = [] as Array<{ date: string; revenue: number }>;
+        const today = new Date();
+
+        for (let offset = 6; offset >= 0; offset -= 1) {
+            const target = new Date(today);
+            target.setDate(today.getDate() - offset);
+            const dateKey = target.toISOString().slice(0, 10);
+
+            const revenue = paymentAttempts
+                .filter(
+                    (attempt) =>
+                        attempt.status === PaymentAttemptStatus.SUCCEEDED &&
+                        new Date(attempt.createdAt).toISOString().slice(0, 10) === dateKey,
+                )
+                .reduce((sum, attempt) => sum + Number(attempt.amount), 0);
+
+            trend.push({ date: dateKey, revenue });
+        }
+
+        return trend;
+    }
 }
