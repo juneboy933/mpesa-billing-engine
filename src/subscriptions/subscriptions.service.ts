@@ -5,6 +5,7 @@ import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { normalizePhone } from '../common/utils/phone.util';
 import { SubscriptionStatus } from '../generated/prisma/enums';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PaymentsService } from '../payments/payments.service';
 
 const subscriptionSelect = {
     id: true,
@@ -19,6 +20,7 @@ export class SubscriptionsService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly plansService: PlansService,
+        private readonly paymentsService: PaymentsService,
         private readonly notificationsService: NotificationsService,
     ) {}
 
@@ -47,6 +49,54 @@ export class SubscriptionsService {
             where: { merchantId },
             select: subscriptionSelect,
         });
+    }
+
+    async getCustomerPortal(merchantId: string, subscriptionId: string) {
+        const subscription = await this.prisma.subscription.findFirst({
+            where: { id: subscriptionId, merchantId },
+            select: {
+                id: true,
+                customerPhone: true,
+                status: true,
+                nextBillingDate: true,
+                createdAt: true,
+                plan: {
+                    select: {
+                        id: true,
+                        name: true,
+                        amount: true,
+                    },
+                },
+                paymentAttempts: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 10,
+                    select: {
+                        id: true,
+                        status: true,
+                        amount: true,
+                        createdAt: true,
+                    },
+                },
+            },
+        });
+
+        if (!subscription) {
+            throw new NotFoundException('Subscription not found');
+        }
+
+        return {
+            subscriptionId: subscription.id,
+            customerPhone: subscription.customerPhone,
+            status: subscription.status,
+            nextBillingDate: subscription.nextBillingDate,
+            currentPlan: subscription.plan,
+            recentPayments: subscription.paymentAttempts,
+        };
+    }
+
+    async payNow(merchantId: string, subscriptionId: string) {
+        await this.getSubscriptionById(merchantId, subscriptionId);
+        return await this.paymentsService.triggerSTkPush(subscriptionId);
     }
 
     async getSubscriptionById(merchantId: string, subscriptionId: string) {

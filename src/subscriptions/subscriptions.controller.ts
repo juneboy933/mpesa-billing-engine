@@ -32,6 +32,28 @@ export class SubscriptionsController {
         return await this.subscriptionsService.getAllSubscriptions(req.merchant.id);
     }
 
+    @Get(':subscriptionId/portal')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Get the customer billing portal view for a subscription' })
+    @ApiResponse({ status: 200, description: 'Customer billing portal retrieved successfully' })
+    async getCustomerPortal(
+        @Req() req: AuthenticatedRequest,
+        @Param('subscriptionId') subscriptionId: string,
+    ) {
+        return await this.subscriptionsService.getCustomerPortal(req.merchant.id, subscriptionId);
+    }
+
+    @Post(':subscriptionId/pay-now')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Trigger an immediate M-Pesa billing attempt for the customer' })
+    @ApiResponse({ status: 200, description: 'Payment request sent successfully' })
+    async payNow(
+        @Req() req: AuthenticatedRequest,
+        @Param('subscriptionId') subscriptionId: string,
+    ) {
+        return await this.subscriptionsService.payNow(req.merchant.id, subscriptionId);
+    }
+
     @Get(':subscriptionId')
     @ApiSecurity('api-key')
     @ApiOperation({ summary: 'Get a specific subscription by ID for the authenticated merchant' })
