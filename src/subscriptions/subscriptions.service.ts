@@ -49,6 +49,35 @@ export class SubscriptionsService {
         });
     }
 
+    async getManagementOverview(merchantId: string) {
+        const subscriptions = await this.prisma.subscription.findMany({
+            where: { merchantId },
+            orderBy: { createdAt: 'desc' },
+            select: {
+                id: true,
+                customerPhone: true,
+                status: true,
+                nextBillingDate: true,
+                createdAt: true,
+                plan: {
+                    select: {
+                        id: true,
+                        name: true,
+                        amount: true,
+                    },
+                },
+            },
+        });
+
+        return {
+            totalSubscriptions: subscriptions.length,
+            activeSubscriptions: subscriptions.filter(
+                (subscription) => subscription.status === SubscriptionStatus.ACTIVE,
+            ).length,
+            subscriptions,
+        };
+    }
+
     async getSubscriptionById(merchantId: string, subscriptionId: string) {
         const subscription = await this.prisma.subscription.findFirst({
             where: { id: subscriptionId, merchantId },

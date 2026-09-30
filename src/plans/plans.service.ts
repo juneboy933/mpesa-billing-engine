@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
+import { SubscriptionStatus } from '../generated/prisma/enums';
 
 const planSelect = {
     id: true,
@@ -70,6 +71,48 @@ export class PlansService {
         }
 
         return { message: 'Plan deleted successfully' };
+    }
+
+    async getManagementOverview(merchantId: string) {
+        const plans = await this.prisma.plan.findMany({
+            where: { merchantId },
+            select: {
+                id: true,
+                name: true,
+                amount: true,
+                interval: true,
+                createdAt: true,
+            },
+        });
+
+        const subscriptions = await this.prisma.subscription.findMany({
+            where: { merchantId },
+            select: {
+                id: true,
+                planId: true,
+                status: true,
+            },
+        });
+
+        const planMap = new Map<string, number>();
+        for (const subscription of subscriptions) {
+            planMap.set(subscription.planId, (planMap.get(subscription.planId) ?? 0) + 1);
+        }
+
+        const plansWithCounts = plans.map((plan) => ({
+            ...plan,
+            subscriptionCount: planMap.get(plan.id) ?? 0,
+        }));
+
+        const totalActiveSubscriptions = subscriptions.filter(
+            (subscription) => subscription.status === SubscriptionStatus.ACTIVE,
+        ).length;
+
+        return {
+            totalPlans: plans.length,
+            totalActiveSubscriptions,
+            plans: plansWithCounts,
+        };
     }
 
 }

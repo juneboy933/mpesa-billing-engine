@@ -30,6 +30,14 @@ export class PlansController {
         return await this.plansServices.findAll(req.merchant.id);
     }
 
+    @Get('management')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Get the merchant plan management summary with per-plan subscription counts' })
+    @ApiResponse({ status: 200, description: 'Plan management summary retrieved successfully' })
+    async getManagementOverview(@Req() req: AuthenticatedRequest) {
+        return await this.plansServices.getManagementOverview(req.merchant.id);
+    }
+
     @Get(':planId')
     @ApiSecurity('api-key')
     @ApiOperation({ summary: 'Retrieve a specific plan by ID for the authenticated merchant' })

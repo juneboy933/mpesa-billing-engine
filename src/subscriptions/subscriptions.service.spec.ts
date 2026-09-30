@@ -100,6 +100,31 @@ describe('SubscriptionsService', () => {
     expect(result).toBe(subscriptions);
   });
 
+  it('returns a merchant subscription management overview with plan details', async () => {
+    const subscriptions = [
+      {
+        id: 'sub_1',
+        customerPhone: '254712345678',
+        nextBillingDate: new Date('2026-10-01T00:00:00.000Z'),
+        status: 'ACTIVE',
+        createdAt: new Date('2026-09-01T00:00:00.000Z'),
+        plan: { id: 'plan_1', name: 'Gold', amount: 1200 },
+      },
+    ];
+    prisma.subscription.findMany.mockResolvedValue(subscriptions);
+
+    const result = await service.getManagementOverview('merchant_1');
+
+    expect(result.totalSubscriptions).toBe(1);
+    expect(result.activeSubscriptions).toBe(1);
+    expect(result.subscriptions[0]).toMatchObject({
+      id: 'sub_1',
+      customerPhone: '254712345678',
+      status: 'ACTIVE',
+      plan: { name: 'Gold', amount: 1200 },
+    });
+  });
+
   it('throws when the merchant subscription cannot be found', async () => {
     prisma.subscription.findFirst.mockResolvedValue(null);
 
