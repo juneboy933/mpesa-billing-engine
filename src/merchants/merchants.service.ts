@@ -4,6 +4,7 @@ import { CreateMerchantDto } from './dto/create-merchant.dto';
 import * as crypto from 'crypto';
 import * as argon2 from 'argon2';
 import { UpdateMerchantDto } from './dto/update-merchant.dto';
+import { PaymentAttemptStatus, SubscriptionStatus } from '../generated/prisma/enums';
 
 const merchantSelect = {
     id: true,
@@ -82,5 +83,58 @@ export class MerchantsService {
         });
 
         return { webhookSecret };
+    }
+
+    async getDashboard(merchantId: string) {
+        const [
+            plansCount,
+            subscriptionsCount,
+            activeSubscriptionsCount,
+            failedPaymentsCount,
+            recentSubscriptions,
+        ] = await Promise.all([
+            this.prisma.plan.count({ where: { merchantId } }),
+            this.prisma.subscription.count({ where: { merchantId } }),
+            this.prisma.subscription.count({
+                where: { merchantId, status: SubscriptionStatus.ACTIVE },
+            }),
+            this.prisma.paymentAttempt.count({
+                where: {
+                    status: {
+                        in: [PaymentAttemptStatus.FAILED, PaymentAttemptStatus.TIMED_OUT],
+                    },
+                    subscription: { merchantId },
+                },
+            }),
+            this.prisma.subscription.findMany({
+                where: { merchantId },
+                orderBy: { createdAt: 'desc' },
+                take: 5,
+                select: {
+                    id: true,
+                    customerPhone: true,
+                    status: true,
+                    nextBillingDate: true,
+                    createdAt: true,
+                    plan: {
+                        select: {
+                            name: true,
+                            amount: true,
+                        },
+                    },
+                },
+            }),
+        ]);
+
+        return {
+            merchantId,
+            metrics: {
+                plansCount,
+                subscriptionsCount,
+                activeSubscriptionsCount,
+                failedPaymentsCount,
+            },
+            recentSubscriptions,
+        };
     }
 }

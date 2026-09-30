@@ -9,6 +9,8 @@ describe('MerchantsController', () => {
   let controller: MerchantsController;
   let merchantsService: {
     create: jest.Mock;
+    onboard: jest.Mock;
+    getDashboard: jest.Mock;
     update: jest.Mock;
     rotateWebhookSecret: jest.Mock;
   };
@@ -19,6 +21,8 @@ describe('MerchantsController', () => {
   beforeEach(async () => {
     merchantsService = {
       create: jest.fn(),
+      onboard: jest.fn(),
+      getDashboard: jest.fn(),
       update: jest.fn(),
       rotateWebhookSecret: jest.fn(),
     };
@@ -62,6 +66,23 @@ describe('MerchantsController', () => {
       merchantsService.create.mockRejectedValue(error);
 
       await expect(controller.create(dto)).rejects.toThrow(error);
+    });
+  });
+
+  describe('dashboard', () => {
+    it('delegates to merchantsService.getDashboard with the authenticated merchant id', async () => {
+      const req = mockRequest('m1');
+      const dashboard = {
+        merchantId: 'm1',
+        metrics: { plansCount: 2, subscriptionsCount: 4, activeSubscriptionsCount: 3, failedPaymentsCount: 1 },
+        recentSubscriptions: [],
+      };
+      merchantsService.getDashboard.mockResolvedValue(dashboard);
+
+      const result = await controller.getDashboard(req);
+
+      expect(merchantsService.getDashboard).toHaveBeenCalledWith('m1');
+      expect(result).toBe(dashboard);
     });
   });
 

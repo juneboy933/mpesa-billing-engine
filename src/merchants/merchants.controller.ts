@@ -23,6 +23,14 @@ export class MerchantsController {
         return await this.merchantsService.create(dto);
     }
 
+    @Get('dashboard')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Get a merchant dashboard snapshot with plan and subscription metrics' })
+    @ApiResponse({ status: 200, description: 'Dashboard data retrieved successfully' })
+    async getDashboard(@Req() req: AuthenticatedUser) {
+        return await this.merchantsService.getDashboard(req.merchant.id);
+    }
+
     @Patch('me')
     @ApiSecurity('api-key')
     @ApiOperation({ summary: 'Update merchant webhook URL'})
