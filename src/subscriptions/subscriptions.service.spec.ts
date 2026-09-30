@@ -154,7 +154,7 @@ describe('SubscriptionsService', () => {
     const result = await service.payNow('merchant_1', 'sub_1');
 
     expect(paymentsService.triggerSTkPush).toHaveBeenCalledWith('sub_1');
-    expect(result).toEqual({ message: 'Payment request sent' });
+    expect(result).toEqual({ message: 'Payment request sent', subscriptionId: 'sub_1' });
   });
 
   it('cancels a subscription and sends the cancellation notification', async () => {
