@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlansService } from '../plans/plans.service';
+import { PaymentsService } from '../payments/payments.service';
 import { SubscriptionsService } from './subscriptions.service';
 
 describe('SubscriptionsService', () => {
@@ -16,6 +17,7 @@ describe('SubscriptionsService', () => {
     };
   };
   let plansService: { findById: jest.Mock };
+  let paymentsService: { triggerSTkPush: jest.Mock };
   let notificationsService: { send: jest.Mock };
 
   beforeEach(async () => {
@@ -29,6 +31,7 @@ describe('SubscriptionsService', () => {
     };
 
     plansService = { findById: jest.fn() };
+    paymentsService = { triggerSTkPush: jest.fn() };
     notificationsService = { send: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -36,6 +39,7 @@ describe('SubscriptionsService', () => {
         SubscriptionsService,
         { provide: PrismaService, useValue: prisma },
         { provide: PlansService, useValue: plansService },
+        { provide: PaymentsService, useValue: paymentsService },
         { provide: NotificationsService, useValue: notificationsService },
       ],
     }).compile();
@@ -104,6 +108,65 @@ describe('SubscriptionsService', () => {
     prisma.subscription.findFirst.mockResolvedValue(null);
 
     await expect(service.getSubscriptionById('merchant_1', 'missing_sub')).rejects.toThrow(NotFoundException);
+  });
+
+  it('returns a merchant retry queue with overdue and retrying subscriptions grouped by status', async () => {
+    const subscriptions = [
+      {
+        id: 'sub_1',
+        customerPhone: '254712345678',
+        nextBillingDate: new Date('2026-09-22T00:00:00.000Z'),
+        status: 'RETRYING',
+        createdAt: new Date('2026-09-01T00:00:00.000Z'),
+        plan: { id: 'plan_1', name: 'Gold', amount: 1200 },
+      },
+      {
+        id: 'sub_2',
+        customerPhone: '254712345679',
+        nextBillingDate: new Date('2026-09-18T00:00:00.000Z'),
+        status: 'PAST_DUE',
+        createdAt: new Date('2026-08-20T00:00:00.000Z'),
+        plan: { id: 'plan_2', name: 'Starter', amount: 500 },
+      },
+    ];
+
+    prisma.subscription.findMany.mockResolvedValue(subscriptions);
+
+    const result = await service.getRetryQueue('merchant_1');
+
+    expect(prisma.subscription.findMany).toHaveBeenCalledWith({
+      where: {
+        merchantId: 'merchant_1',
+        status: { in: ['RETRYING', 'PAST_DUE'] },
+      },
+      orderBy: { nextBillingDate: 'asc' },
+      select: {
+        id: true,
+        customerPhone: true,
+        status: true,
+        nextBillingDate: true,
+        createdAt: true,
+        plan: { select: { id: true, name: true, amount: true } },
+      },
+    });
+    expect(result.total).toBe(2);
+    expect(result.retrying).toBe(1);
+    expect(result.pastDue).toBe(1);
+    expect(result.subscriptions[0]).toMatchObject({ id: 'sub_2', status: 'PAST_DUE' });
+  });
+
+  it('triggers an immediate retry for a failed subscription in the dunning queue', async () => {
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub_1', merchantId: 'merchant_1' });
+    paymentsService.triggerSTkPush.mockResolvedValue({ message: 'Retry payment request sent' });
+
+    const result = await service.triggerRetry('merchant_1', 'sub_1');
+
+    expect(prisma.subscription.findFirst).toHaveBeenCalledWith({
+      where: { id: 'sub_1', merchantId: 'merchant_1' },
+      select: { id: true },
+    });
+    expect(paymentsService.triggerSTkPush).toHaveBeenCalledWith('sub_1');
+    expect(result).toEqual({ message: 'Retry payment request sent' });
   });
 
   it('cancels a subscription and sends the cancellation notification', async () => {
