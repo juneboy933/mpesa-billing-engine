@@ -12,11 +12,15 @@ jest.mock('crypto');
 describe('MerchantsService', () => {
   let service: MerchantsService;
   let prisma: {
+    $transaction: jest.Mock;
     merchant: {
       create: jest.Mock;
       findUnique: jest.Mock;
       findMany: jest.Mock;
       update: jest.Mock;
+    };
+    plan: {
+      create: jest.Mock;
     };
   };
 
@@ -28,11 +32,15 @@ describe('MerchantsService', () => {
 
   beforeEach(async () => {
     prisma = {
+      $transaction: jest.fn(),
       merchant: {
         create: jest.fn(),
         findUnique: jest.fn(),
         findMany: jest.fn(),
         update: jest.fn(),
+      },
+      plan: {
+        create: jest.fn(),
       },
     };
 
@@ -57,6 +65,31 @@ describe('MerchantsService', () => {
     });
 
     mockedArgon2.hash.mockResolvedValue('hashed-api-key');
+  });
+
+  describe('onboard', () => {
+    it('creates the merchant and the first billing plan in one onboarding flow', async () => {
+      const dto = {
+        name: 'Acme Ltd',
+        webhookUrl: 'https://acme.example.com/webhooks',
+        planName: 'Starter Monthly',
+        planAmount: 500,
+      };
+      const createdMerchant = { id: 'm1', name: dto.name, webhookUrl: dto.webhookUrl };
+      const createdPlan = { id: 'plan_1', name: dto.planName, amount: 500, interval: 'MONTHLY', createdAt: new Date() };
+
+      prisma.$transaction.mockImplementation(async (callback) => callback({
+        merchant: { create: jest.fn().mockResolvedValue(createdMerchant) },
+        plan: { create: jest.fn().mockResolvedValue(createdPlan) },
+      }));
+
+      const result = await service.onboard(dto as any);
+
+      expect(result.merchant).toBe(createdMerchant);
+      expect(result.plan).toBe(createdPlan);
+      expect(result.apiKey).toBe(`mk_${HEX_A}`);
+      expect(result.webhookSecret).toBe(`whsec_${HEX_B}`);
+    });
   });
 
   describe('create', () => {

@@ -9,6 +9,7 @@ describe('MerchantsController', () => {
   let controller: MerchantsController;
   let merchantsService: {
     create: jest.Mock;
+    onboard: jest.Mock;
     update: jest.Mock;
     rotateWebhookSecret: jest.Mock;
   };
@@ -19,6 +20,7 @@ describe('MerchantsController', () => {
   beforeEach(async () => {
     merchantsService = {
       create: jest.fn(),
+      onboard: jest.fn(),
       update: jest.fn(),
       rotateWebhookSecret: jest.fn(),
     };
@@ -62,6 +64,30 @@ describe('MerchantsController', () => {
       merchantsService.create.mockRejectedValue(error);
 
       await expect(controller.create(dto)).rejects.toThrow(error);
+    });
+  });
+
+  describe('onboard', () => {
+    const dto = {
+      name: 'Acme Ltd',
+      webhookUrl: 'https://acme.example.com/webhooks',
+      planName: 'Starter Monthly',
+      planAmount: 500,
+    };
+
+    it('delegates to merchantsService.onboard with the dto', async () => {
+      const serviceResult = {
+        merchant: { id: 'm1', name: dto.name, webhookUrl: dto.webhookUrl },
+        plan: { id: 'plan_1', name: dto.planName, amount: dto.planAmount },
+        apiKey: 'mk_rawkey',
+        webhookSecret: 'whsec_rawsecret',
+      };
+      merchantsService.onboard.mockResolvedValue(serviceResult);
+
+      const result = await controller.onboard(dto as any);
+
+      expect(merchantsService.onboard).toHaveBeenCalledWith(dto);
+      expect(result).toBe(serviceResult);
     });
   });
 

@@ -5,6 +5,7 @@ import { CreateMerchantDto } from './dto/create-merchant.dto';
 import { Public } from '../common/decorators/public.decorator';
 import { UpdateMerchantDto } from './dto/update-merchant.dto';
 import { Request } from 'express';
+import { OnboardMerchantDto } from './dto/onboard-merchant.dto';
 
 interface AuthenticatedUser extends Request {
     merchant: { id: string },
@@ -21,6 +22,14 @@ export class MerchantsController {
     @ApiResponse({ status: 201, description: 'Merchant created; save the returned apiKey now' })
     async create(@Body() dto: CreateMerchantDto) {
         return await this.merchantsService.create(dto);
+    }
+
+    @Public()
+    @Post('onboard')
+    @ApiOperation({ summary: 'Create a merchant and their first default billing plan in one onboarding flow' })
+    @ApiResponse({ status: 201, description: 'Merchant and default plan created successfully' })
+    async onboard(@Body() dto: OnboardMerchantDto) {
+        return await this.merchantsService.onboard(dto);
     }
 
     @Patch('me')
