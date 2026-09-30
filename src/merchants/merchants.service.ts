@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import * as argon2 from 'argon2';
 import { UpdateMerchantDto } from './dto/update-merchant.dto';
 import { PaymentAttemptStatus, SubscriptionStatus } from '../generated/prisma/enums';
+import { OnboardMerchantDto } from './dto/onboard-merchant.dto';
 
 const merchantSelect = {
     id: true,
@@ -39,6 +40,47 @@ export class MerchantsService {
         });
 
         return { merchant, apiKey: rawApiKey, webhookSecret };
+    }
+
+    async onboard(dto: OnboardMerchantDto) {
+        const rawApiKey = `mk_${crypto.randomBytes(32).toString('hex')}`;
+        const apiKeyHash = await argon2.hash(rawApiKey);
+        const webhookSecret = `whsec_${crypto.randomBytes(32).toString('hex')}`;
+
+        const result = await this.prisma.$transaction(async (tx) => {
+            const merchant = await tx.merchant.create({
+                data: {
+                    name: dto.name,
+                    webhookUrl: dto.webhookUrl,
+                    apiKeyHash,
+                    webhookSecret,
+                },
+                select: merchantSelect,
+            });
+
+            const plan = await tx.plan.create({
+                data: {
+                    name: dto.planName.trim(),
+                    amount: dto.planAmount,
+                    merchantId: merchant.id,
+                },
+                select: {
+                    id: true,
+                    name: true,
+                    amount: true,
+                    interval: true,
+                    createdAt: true,
+                },
+            });
+
+            return { merchant, plan };
+        });
+
+        return {
+            ...result,
+            apiKey: rawApiKey,
+            webhookSecret,
+        };
     }
 
     async findById( id: string) {
