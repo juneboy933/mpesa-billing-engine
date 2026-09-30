@@ -85,59 +85,6 @@ export class MerchantsService {
         return { webhookSecret };
     }
 
-    async getDashboard(merchantId: string) {
-        const [
-            plansCount,
-            subscriptionsCount,
-            activeSubscriptionsCount,
-            failedPaymentsCount,
-            recentSubscriptions,
-        ] = await Promise.all([
-            this.prisma.plan.count({ where: { merchantId } }),
-            this.prisma.subscription.count({ where: { merchantId } }),
-            this.prisma.subscription.count({
-                where: { merchantId, status: SubscriptionStatus.ACTIVE },
-            }),
-            this.prisma.paymentAttempt.count({
-                where: {
-                    status: {
-                        in: [PaymentAttemptStatus.FAILED, PaymentAttemptStatus.TIMED_OUT],
-                    },
-                    subscription: { merchantId },
-                },
-            }),
-            this.prisma.subscription.findMany({
-                where: { merchantId },
-                orderBy: { createdAt: 'desc' },
-                take: 5,
-                select: {
-                    id: true,
-                    customerPhone: true,
-                    status: true,
-                    nextBillingDate: true,
-                    createdAt: true,
-                    plan: {
-                        select: {
-                            name: true,
-                            amount: true,
-                        },
-                    },
-                },
-            }),
-        ]);
-
-        return {
-            merchantId,
-            metrics: {
-                plansCount,
-                subscriptionsCount,
-                activeSubscriptionsCount,
-                failedPaymentsCount,
-            },
-            recentSubscriptions,
-        };
-    }
-
     async getAnalyticsSummary(merchantId: string) {
         const [subscriptions, paymentAttempts] = await Promise.all([
             this.prisma.subscription.findMany({
@@ -200,70 +147,6 @@ export class MerchantsService {
             failedPayments,
             retryingSubscriptions,
             revenueTrend,
-        };
-    }
-
-    async getDashboardOverview(merchantId: string) {
-        const [subscriptions, paymentAttempts] = await Promise.all([
-            this.prisma.subscription.findMany({
-                where: { merchantId },
-                select: {
-                    id: true,
-                    customerPhone: true,
-                    status: true,
-                    nextBillingDate: true,
-                    createdAt: true,
-                    plan: {
-                        select: {
-                            amount: true,
-                        },
-                    },
-                },
-                orderBy: {
-                    createdAt: 'desc',
-                },
-            }),
-            this.prisma.paymentAttempt.findMany({
-                where: { subscription: { merchantId } },
-                select: {
-                    status: true,
-                    amount: true,
-                },
-            }),
-        ]);
-
-        const activeSubscriptions = subscriptions.filter(
-            (subscription) => subscription.status === SubscriptionStatus.ACTIVE,
-        ).length;
-
-        const monthlyRecurringRevenue = subscriptions
-            .filter((subscription) => subscription.status === SubscriptionStatus.ACTIVE)
-            .reduce((sum, subscription) => sum + Number(subscription.plan.amount), 0);
-
-        const failedPayments = paymentAttempts.filter(
-            (attempt) =>
-                attempt.status === PaymentAttemptStatus.FAILED ||
-                attempt.status === PaymentAttemptStatus.TIMED_OUT,
-        ).length;
-
-        const totalRevenue = paymentAttempts
-            .filter((attempt) => attempt.status === PaymentAttemptStatus.SUCCEEDED)
-            .reduce((sum, attempt) => sum + Number(attempt.amount), 0);
-
-        return {
-            totalSubscriptions: subscriptions.length,
-            activeSubscriptions,
-            monthlyRecurringRevenue,
-            totalRevenue,
-            failedPayments,
-            recentSubscriptions: subscriptions.slice(0, 5).map((subscription) => ({
-                id: subscription.id,
-                customerPhone: subscription.customerPhone,
-                status: subscription.status,
-                nextBillingDate: subscription.nextBillingDate,
-                amount: Number(subscription.plan.amount),
-                createdAt: subscription.createdAt,
-            })),
         };
     }
 

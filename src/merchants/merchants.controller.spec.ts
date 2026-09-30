@@ -14,7 +14,6 @@ describe('MerchantsController', () => {
     update: jest.Mock;
     rotateWebhookSecret: jest.Mock;
     getAnalyticsSummary: jest.Mock;
-    getDashboardOverview: jest.Mock;
   };
 
   const mockRequest = (merchantId: string) =>
@@ -28,7 +27,6 @@ describe('MerchantsController', () => {
       update: jest.fn(),
       rotateWebhookSecret: jest.fn(),
       getAnalyticsSummary: jest.fn(),
-      getDashboardOverview: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -153,19 +151,6 @@ describe('MerchantsController', () => {
 
       expect(merchantsService.getAnalyticsSummary).toHaveBeenCalledWith('m1');
       expect(result).toBe(analytics);
-    });
-  });
-
-  describe('getDashboardOverview', () => {
-    it('delegates to merchantsService.getDashboardOverview with the authenticated merchant id', async () => {
-      const req = mockRequest('m1');
-      const dashboard = { totalSubscriptions: 2, activeSubscriptions: 1, monthlyRecurringRevenue: 1200, recentSubscriptions: [] };
-      merchantsService.getDashboardOverview.mockResolvedValue(dashboard);
-
-      const result = await controller.getDashboardOverview(req);
-
-      expect(merchantsService.getDashboardOverview).toHaveBeenCalledWith('m1');
-      expect(result).toBe(dashboard);
     });
   });
 });

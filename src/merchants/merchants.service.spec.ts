@@ -18,19 +18,12 @@ describe('MerchantsService', () => {
       findMany: jest.Mock;
       update: jest.Mock;
     };
-    plan: {
-      count: jest.Mock;
-      create: jest.Mock;
-    };
     subscription: {
-      count: jest.Mock;
       findMany: jest.Mock;
     };
     paymentAttempt: {
-      count: jest.Mock;
       findMany: jest.Mock;
     };
-    $transaction: jest.Mock;
   };
 
   const mockedArgon2 = argon2 as jest.Mocked<typeof argon2>;
@@ -48,16 +41,10 @@ describe('MerchantsService', () => {
         findMany: jest.fn(),
         update: jest.fn(),
       },
-      plan: {
-        count: jest.fn(),
-        create: jest.fn(),
-      },
       subscription: {
-        count: jest.fn(),
         findMany: jest.fn(),
       },
       paymentAttempt: {
-        count: jest.fn(),
         findMany: jest.fn(),
       },
     };
@@ -354,44 +341,6 @@ describe('MerchantsService', () => {
       });
       expect(result.revenueTrend).toHaveLength(7);
       expect(result.revenueTrend[0].date).toBeDefined();
-    });
-  });
-
-  describe('getDashboardOverview', () => {
-    it('returns the merchant dashboard snapshot with key metrics and recent activity', async () => {
-      prisma.subscription.findMany.mockResolvedValue([
-        {
-          id: 'sub_1',
-          customerPhone: '+254700000001',
-          status: 'ACTIVE',
-          nextBillingDate: new Date('2026-09-15T00:00:00.000Z'),
-          plan: { amount: 1200 },
-          createdAt: new Date('2026-09-01T00:00:00.000Z'),
-        },
-        {
-          id: 'sub_2',
-          customerPhone: '+254700000002',
-          status: 'RETRYING',
-          nextBillingDate: new Date('2026-09-20T00:00:00.000Z'),
-          plan: { amount: 800 },
-          createdAt: new Date('2026-09-02T00:00:00.000Z'),
-        },
-      ]);
-      prisma.paymentAttempt.findMany.mockResolvedValue([
-        { status: 'SUCCEEDED', amount: 1400, createdAt: new Date('2026-09-10T00:00:00.000Z') },
-        { status: 'FAILED', amount: 1000, createdAt: new Date('2026-09-12T00:00:00.000Z') },
-      ]);
-
-      const result = await service.getDashboardOverview('m1');
-
-      expect(result).toMatchObject({
-        totalSubscriptions: 2,
-        activeSubscriptions: 1,
-        monthlyRecurringRevenue: 1200,
-        failedPayments: 1,
-      });
-      expect(result.recentSubscriptions).toHaveLength(2);
-      expect(result.recentSubscriptions[0].id).toBe('sub_1');
     });
   });
 });
