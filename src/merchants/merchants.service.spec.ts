@@ -18,6 +18,12 @@ describe('MerchantsService', () => {
       findMany: jest.Mock;
       update: jest.Mock;
     };
+    subscription: {
+      findMany: jest.Mock;
+    };
+    paymentAttempt: {
+      findMany: jest.Mock;
+    };
   };
 
   const mockedArgon2 = argon2 as jest.Mocked<typeof argon2>;
@@ -33,6 +39,12 @@ describe('MerchantsService', () => {
         findUnique: jest.fn(),
         findMany: jest.fn(),
         update: jest.fn(),
+      },
+      subscription: {
+        findMany: jest.fn(),
+      },
+      paymentAttempt: {
+        findMany: jest.fn(),
       },
     };
 
@@ -267,6 +279,34 @@ describe('MerchantsService', () => {
       prisma.merchant.update.mockRejectedValue(notFoundError);
 
       await expect(service.rotateWebhookSecret('missing-id')).rejects.toThrow(notFoundError);
+    });
+  });
+
+  describe('getAnalyticsSummary', () => {
+    it('returns merchant revenue, active subscriptions, and recovery metrics', async () => {
+      prisma.subscription.findMany.mockResolvedValue([
+        { id: 'sub_1', status: 'ACTIVE', plan: { amount: 1200 } },
+        { id: 'sub_2', status: 'RETRYING', plan: { amount: 800 } },
+        { id: 'sub_3', status: 'PAST_DUE', plan: { amount: 500 } },
+      ]);
+      prisma.paymentAttempt.findMany.mockResolvedValue([
+        { status: 'SUCCEEDED', amount: 1200, createdAt: new Date('2026-09-01T00:00:00.000Z') },
+        { status: 'SUCCEEDED', amount: 2000, createdAt: new Date('2026-09-05T00:00:00.000Z') },
+        { status: 'FAILED', amount: 1200, createdAt: new Date('2026-09-10T00:00:00.000Z') },
+      ]);
+
+      const result = await service.getAnalyticsSummary('m1');
+
+      expect(result).toMatchObject({
+        totalSubscriptions: 3,
+        activeSubscriptions: 1,
+        monthlyRecurringRevenue: 1200,
+        totalRevenue: 3200,
+        failedPayments: 1,
+        retryingSubscriptions: 2,
+      });
+      expect(result.revenueTrend).toHaveLength(7);
+      expect(result.revenueTrend[0].date).toBeDefined();
     });
   });
 });

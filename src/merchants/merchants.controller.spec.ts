@@ -11,6 +11,7 @@ describe('MerchantsController', () => {
     create: jest.Mock;
     update: jest.Mock;
     rotateWebhookSecret: jest.Mock;
+    getAnalyticsSummary: jest.Mock;
   };
 
   const mockRequest = (merchantId: string) =>
@@ -21,6 +22,7 @@ describe('MerchantsController', () => {
       create: jest.fn(),
       update: jest.fn(),
       rotateWebhookSecret: jest.fn(),
+      getAnalyticsSummary: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -115,6 +117,19 @@ describe('MerchantsController', () => {
       merchantsService.rotateWebhookSecret.mockRejectedValue(error);
 
       await expect(controller.rotateWebhookSecret(req)).rejects.toThrow(error);
+    });
+  });
+
+  describe('getAnalyticsSummary', () => {
+    it('delegates to merchantsService.getAnalyticsSummary with the authenticated merchant id', async () => {
+      const req = mockRequest('m1');
+      const analytics = { totalSubscriptions: 3, activeSubscriptions: 1, totalRevenue: 3200, failedPayments: 1, revenueTrend: [] };
+      merchantsService.getAnalyticsSummary.mockResolvedValue(analytics);
+
+      const result = await controller.getAnalyticsSummary(req);
+
+      expect(merchantsService.getAnalyticsSummary).toHaveBeenCalledWith('m1');
+      expect(result).toBe(analytics);
     });
   });
 });
