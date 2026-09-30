@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreatePlanDto } from './dto/create-plan.dto';
 import { UpdatePlanDto } from './dto/update-plan.dto';
@@ -17,6 +17,15 @@ export class PlansService {
     constructor(private readonly prisma: PrismaService) {}
 
     async create(merchantId: string, dto: CreatePlanDto) {
+        const merchant = await this.prisma.merchant.findUnique({
+            where: { id: merchantId },
+            select: { id: true, mpesaSetupStatus: true },
+        });
+
+        if (merchant?.mpesaSetupStatus !== 'COMPLETED') {
+            throw new BadRequestException('Complete M-Pesa setup before creating a plan');
+        }
+
         return await this.prisma.plan.create({
             data: {
                 name: dto.name.trim(),

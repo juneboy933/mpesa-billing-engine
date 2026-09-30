@@ -141,6 +141,61 @@ describe('MerchantsService', () => {
     });
   });
 
+  describe('guided onboarding', () => {
+    it('starts onboarding with M-Pesa setup as the next required step', async () => {
+      const created = {
+        merchant: { id: 'm1', name: 'Gym', webhookUrl: null },
+        webhookSecret: 'whsec_secret',
+      };
+      prisma.merchant.create.mockResolvedValue(created.merchant);
+
+      const result = await service.startOnboarding({ name: 'Gym' });
+
+      expect(result).toMatchObject({
+        merchant: created.merchant,
+        apiKey: expect.stringMatching(/^mk_/),
+        onboarding: { status: 'MPESA_SETUP_REQUIRED', nextStep: 'MPESA_SETUP' },
+      });
+    });
+
+    it('reports setup and first-plan progress without exposing credentials', async () => {
+      prisma.merchant.findUnique.mockResolvedValue({
+        id: 'm1',
+        name: 'Gym',
+        mpesaSetupStatus: 'COMPLETED',
+        mpesaSetupCompletedAt: new Date('2026-09-30T00:00:00.000Z'),
+        plans: [],
+      });
+
+      await expect(service.getOnboardingStatus('m1')).resolves.toEqual({
+        merchantId: 'm1',
+        businessName: 'Gym',
+        mpesaSetup: { status: 'COMPLETED', completedAt: new Date('2026-09-30T00:00:00.000Z') },
+        firstPlan: { status: 'REQUIRED' },
+        nextStep: 'FIRST_PLAN',
+      });
+    });
+
+    it('creates the first plan only after M-Pesa setup is complete', async () => {
+      prisma.merchant.findUnique.mockResolvedValue({ id: 'm1', mpesaSetupStatus: 'COMPLETED' });
+      const plan = { id: 'plan_1', name: 'Monthly Gym', amount: 1500, interval: 'MONTHLY', createdAt: new Date() };
+      prisma.plan.create.mockResolvedValue(plan);
+
+      await expect(service.completeOnboarding('m1', { name: 'Monthly Gym', amount: 1500 })).resolves.toEqual({
+        status: 'COMPLETE',
+        plan,
+      });
+    });
+
+    it('rejects first-plan creation while M-Pesa setup is incomplete', async () => {
+      prisma.merchant.findUnique.mockResolvedValue({ id: 'm1', mpesaSetupStatus: 'PENDING' });
+
+      await expect(service.completeOnboarding('m1', { name: 'Monthly Gym', amount: 1500 }))
+        .rejects.toThrow('Complete M-Pesa setup before creating a plan');
+      expect(prisma.plan.create).not.toHaveBeenCalled();
+    });
+  });
+
   describe('getMpesaSetupStatus', () => {
     it('returns setup status without exposing encrypted credentials', async () => {
       prisma.merchant.findUnique.mockResolvedValue({

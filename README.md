@@ -39,6 +39,9 @@ All routes are mounted under `/api` in the application bootstrap.
 ### Merchant routes
 
 - `POST /api/merchants` — public merchant registration; returns the API key and webhook secret once
+- `POST /api/merchants/onboarding/start` — start guided onboarding and receive the next required step
+- `GET /api/merchants/me/onboarding` — resume guided onboarding progress
+- `POST /api/merchants/me/onboarding/plan` — create the first membership plan after PayBill setup
 - `POST /api/merchants/me/mpesa-setup` — validate and save encrypted merchant PayBill Daraja credentials
 - `GET /api/merchants/me/mpesa-setup` — resume setup by checking the merchant's M-Pesa setup status
 - `PATCH /api/merchants/me` — update the authenticated merchant

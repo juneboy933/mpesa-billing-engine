@@ -9,6 +9,7 @@ import { OnboardMerchantDto } from './dto/onboard-merchant.dto';
 import { SetupMpesaDto } from './dto/setup-mpesa.dto';
 import { DarajaService } from '../payments/daraja/daraja.service';
 import { MpesaCredentialsService } from './mpesa-credentials.service';
+import { CreatePlanDto } from '../plans/dto/create-plan.dto';
 
 const merchantSelect = {
     id: true,
@@ -23,6 +24,14 @@ const merchantSelectWithSecrets = {
     webhookSecret: true,
 }
 
+const planSelect = {
+    id: true,
+    name: true,
+    amount: true,
+    interval: true,
+    createdAt: true,
+};
+
 @Injectable()
 export class MerchantsService {
     constructor(
@@ -30,6 +39,85 @@ export class MerchantsService {
         private readonly darajaService: DarajaService,
         private readonly mpesaCredentialsService: MpesaCredentialsService,
     ) {}
+
+    async startOnboarding(dto: CreateMerchantDto) {
+        const result = await this.create(dto);
+
+        return {
+            ...result,
+            onboarding: {
+                status: 'MPESA_SETUP_REQUIRED',
+                nextStep: 'MPESA_SETUP',
+            },
+        };
+    }
+
+    async getOnboardingStatus(merchantId: string) {
+        const merchant = await this.prisma.merchant.findUnique({
+            where: { id: merchantId },
+            select: {
+                id: true,
+                name: true,
+                mpesaSetupStatus: true,
+                mpesaSetupCompletedAt: true,
+                plans: {
+                    orderBy: { createdAt: 'asc' },
+                    take: 1,
+                    select: { id: true, name: true, amount: true, interval: true, createdAt: true },
+                },
+            },
+        });
+
+        if (!merchant) {
+            return {
+                merchantId,
+                businessName: null,
+                mpesaSetup: { status: 'PENDING', completedAt: null },
+                firstPlan: { status: 'REQUIRED' },
+                nextStep: 'MPESA_SETUP',
+            };
+        }
+
+        const setupComplete = merchant.mpesaSetupStatus === 'COMPLETED';
+        const hasPlan = merchant.plans.length > 0;
+
+        return {
+            merchantId: merchant.id,
+            businessName: merchant.name,
+            mpesaSetup: {
+                status: merchant.mpesaSetupStatus,
+                completedAt: merchant.mpesaSetupCompletedAt,
+            },
+            firstPlan: hasPlan ? { status: 'COMPLETED', plan: merchant.plans[0] } : { status: 'REQUIRED' },
+            nextStep: !setupComplete ? 'MPESA_SETUP' : !hasPlan ? 'FIRST_PLAN' : 'DASHBOARD',
+        };
+    }
+
+    async completeOnboarding(merchantId: string, dto: CreatePlanDto) {
+        const merchant = await this.prisma.merchant.findUnique({
+            where: { id: merchantId },
+            select: { id: true, mpesaSetupStatus: true },
+        });
+
+        if (!merchant) {
+            throw new BadRequestException('Merchant onboarding session not found');
+        }
+
+        if (merchant.mpesaSetupStatus !== 'COMPLETED') {
+            throw new BadRequestException('Complete M-Pesa setup before creating a plan');
+        }
+
+        const plan = await this.prisma.plan.create({
+            data: {
+                name: dto.name.trim(),
+                amount: dto.amount,
+                merchantId,
+            },
+            select: planSelect,
+        });
+
+        return { status: 'COMPLETE', plan };
+    }
 
     async setupMpesa(merchantId: string, dto: SetupMpesaDto) {
         const validation = await this.darajaService.validateCredentials(dto);
