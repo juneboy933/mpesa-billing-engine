@@ -32,6 +32,14 @@ export class SubscriptionsController {
         return await this.subscriptionsService.getAllSubscriptions(req.merchant.id);
     }
 
+    @Get('management')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Get the merchant subscription management overview with plan details' })
+    @ApiResponse({ status: 200, description: 'Subscription management overview retrieved successfully' })
+    async getManagementOverview(@Req() req: AuthenticatedRequest) {
+        return await this.subscriptionsService.getManagementOverview(req.merchant.id);
+    }
+
     @Get(':subscriptionId')
     @ApiSecurity('api-key')
     @ApiOperation({ summary: 'Get a specific subscription by ID for the authenticated merchant' })

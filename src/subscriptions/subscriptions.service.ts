@@ -51,9 +51,10 @@ export class SubscriptionsService {
         });
     }
 
-    async getCustomerPortal(merchantId: string, subscriptionId: string) {
-        const subscription = await this.prisma.subscription.findFirst({
-            where: { id: subscriptionId, merchantId },
+    async getManagementOverview(merchantId: string) {
+        const subscriptions = await this.prisma.subscription.findMany({
+            where: { merchantId },
+            orderBy: { createdAt: 'desc' },
             select: {
                 id: true,
                 customerPhone: true,
@@ -67,41 +68,15 @@ export class SubscriptionsService {
                         amount: true,
                     },
                 },
-                paymentAttempts: {
-                    orderBy: { createdAt: 'desc' },
-                    take: 10,
-                    select: {
-                        id: true,
-                        status: true,
-                        amount: true,
-                        createdAt: true,
-                    },
-                },
             },
         });
 
-        if (!subscription) {
-            throw new NotFoundException('Subscription not found');
-        }
-
         return {
-            subscriptionId: subscription.id,
-            customerPhone: subscription.customerPhone,
-            status: subscription.status,
-            nextBillingDate: subscription.nextBillingDate,
-            createdAt: subscription.createdAt,
-            currentPlan: subscription.plan,
-            recentPayments: subscription.paymentAttempts,
-        };
-    }
-
-    async payNow(merchantId: string, subscriptionId: string) {
-        await this.getSubscriptionById(merchantId, subscriptionId);
-        await this.paymentsService.triggerSTkPush(subscriptionId);
-
-        return {
-            message: 'Payment request sent',
-            subscriptionId,
+            totalSubscriptions: subscriptions.length,
+            activeSubscriptions: subscriptions.filter(
+                (subscription) => subscription.status === SubscriptionStatus.ACTIVE,
+            ).length,
+            subscriptions,
         };
     }
 

@@ -13,6 +13,9 @@ describe('PlansService', () => {
       findFirst: jest.Mock;
       deleteMany: jest.Mock;
     };
+    subscription: {
+      findMany: jest.Mock;
+    };
   };
 
   beforeEach(async () => {
@@ -23,6 +26,9 @@ describe('PlansService', () => {
         findMany: jest.fn(),
         findFirst: jest.fn(),
         deleteMany: jest.fn(),
+      },
+      subscription: {
+        findMany: jest.fn(),
       },
     };
 
@@ -117,6 +123,34 @@ describe('PlansService', () => {
       take: 5,
     });
     expect(result).toBe(plans);
+  });
+
+  it('returns a merchant plan management overview with subscription counts', async () => {
+    const plans = [
+      { id: 'plan_1', name: 'Gold', amount: 1200, interval: 'MONTHLY', createdAt: new Date() },
+      { id: 'plan_2', name: 'Silver', amount: 800, interval: 'MONTHLY', createdAt: new Date() },
+    ];
+    prisma.plan.findMany.mockResolvedValue(plans);
+    prisma.subscription.findMany.mockResolvedValue([
+      { id: 'sub_1', planId: 'plan_1', status: 'ACTIVE' },
+      { id: 'sub_2', planId: 'plan_1', status: 'RETRYING' },
+      { id: 'sub_3', planId: 'plan_2', status: 'ACTIVE' },
+    ]);
+
+    const result = await service.getManagementOverview('merchant_1');
+
+    expect(result.totalPlans).toBe(2);
+    expect(result.totalActiveSubscriptions).toBe(2);
+    expect(result.plans[0]).toMatchObject({
+      id: 'plan_1',
+      name: 'Gold',
+      subscriptionCount: 2,
+    });
+    expect(result.plans[1]).toMatchObject({
+      id: 'plan_2',
+      name: 'Silver',
+      subscriptionCount: 1,
+    });
   });
 
   it('throws if a plan for the merchant does not exist', async () => {
