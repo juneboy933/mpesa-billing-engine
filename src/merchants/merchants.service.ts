@@ -192,6 +192,50 @@ export class MerchantsService {
         };
     }
 
+    async getDashboard(merchantId: string) {
+        const [plansCount, subscriptionsCount, failedPaymentsCount, recentSubscriptions] = await Promise.all([
+            this.prisma.plan.count({ where: { merchantId } }),
+            this.prisma.subscription.count({ where: { merchantId } }),
+            this.prisma.paymentAttempt.count({
+                where: {
+                    status: { in: [PaymentAttemptStatus.FAILED, PaymentAttemptStatus.TIMED_OUT] },
+                    subscription: { merchantId },
+                },
+            }),
+            this.prisma.subscription.findMany({
+                where: { merchantId },
+                orderBy: { createdAt: 'desc' },
+                take: 10,
+                select: {
+                    id: true,
+                    customerPhone: true,
+                    status: true,
+                    nextBillingDate: true,
+                    createdAt: true,
+                    plan: {
+                        select: {
+                            name: true,
+                            amount: true,
+                        },
+                    },
+                },
+            }),
+        ]);
+
+        return {
+            merchantId,
+            metrics: {
+                plansCount,
+                subscriptionsCount,
+                activeSubscriptionsCount: recentSubscriptions.filter(
+                    (subscription) => subscription.status === SubscriptionStatus.ACTIVE,
+                ).length,
+                failedPaymentsCount,
+            },
+            recentSubscriptions,
+        };
+    }
+
     private buildRevenueTrend(paymentAttempts: Array<{ status: string; amount: number | { toNumber?: () => number }; createdAt: Date }>) {
         const trend = [] as Array<{ date: string; revenue: number }>;
         const today = new Date();

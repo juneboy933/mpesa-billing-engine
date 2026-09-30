@@ -20,12 +20,15 @@ describe('MerchantsService', () => {
       update: jest.Mock;
     };
     subscription: {
+      count: jest.Mock;
       findMany: jest.Mock;
     };
     paymentAttempt: {
+      count: jest.Mock;
       findMany: jest.Mock;
     };
     plan: {
+      count: jest.Mock;
       create: jest.Mock;
     };
   };
@@ -46,12 +49,15 @@ describe('MerchantsService', () => {
         update: jest.fn(),
       },
       subscription: {
+        count: jest.fn(),
         findMany: jest.fn(),
       },
       paymentAttempt: {
+        count: jest.fn(),
         findMany: jest.fn(),
       },
       plan: {
+        count: jest.fn(),
         create: jest.fn(),
       },
     };
@@ -167,6 +173,39 @@ describe('MerchantsService', () => {
 
       await expect(service.create(dto)).rejects.toThrow('hashing failed');
       expect(prisma.merchant.create).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getDashboard', () => {
+    it('returns a summary of plans, subscriptions, and failed payments for the merchant', async () => {
+      prisma.plan.count.mockResolvedValue(3);
+      prisma.subscription.count.mockResolvedValue(7);
+      prisma.paymentAttempt.count.mockResolvedValue(2);
+      prisma.subscription.findMany.mockResolvedValue([
+        {
+          id: 'sub_1',
+          customerPhone: '+254712345678',
+          status: 'ACTIVE',
+          nextBillingDate: new Date('2026-10-01T00:00:00.000Z'),
+          createdAt: new Date('2026-09-01T00:00:00.000Z'),
+          plan: { name: 'Starter', amount: 500 },
+        },
+      ]);
+
+      const result = await service.getDashboard('m1');
+
+      expect(prisma.plan.count).toHaveBeenCalledWith({ where: { merchantId: 'm1' } });
+      expect(prisma.subscription.count).toHaveBeenCalledWith({ where: { merchantId: 'm1' } });
+      expect(prisma.paymentAttempt.count).toHaveBeenCalledWith({
+        where: {
+          status: { in: ['FAILED', 'TIMED_OUT'] },
+          subscription: { merchantId: 'm1' },
+        },
+      });
+      expect(result.metrics.plansCount).toBe(3);
+      expect(result.metrics.subscriptionsCount).toBe(7);
+      expect(result.metrics.failedPaymentsCount).toBe(2);
+      expect(result.recentSubscriptions).toHaveLength(1);
     });
   });
 

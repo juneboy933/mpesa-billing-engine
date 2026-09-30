@@ -32,6 +32,14 @@ export class MerchantsController {
         return await this.merchantsService.getAnalyticsSummary(req.merchant.id);
     }
 
+    @Get('dashboard')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Get the merchant dashboard summary' })
+    @ApiResponse({ status: 200, description: 'Dashboard summary retrieved successfully' })
+    async getDashboard(@Req() req: AuthenticatedUser) {
+        return await this.merchantsService.getDashboard(req.merchant.id);
+    }
+
     @Public()
     @Post('onboard')
     @ApiOperation({ summary: 'Create a merchant and their first default billing plan in one onboarding flow' })
