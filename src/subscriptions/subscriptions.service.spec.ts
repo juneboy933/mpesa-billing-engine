@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlansService } from '../plans/plans.service';
+import { PaymentsService } from '../payments/payments.service';
 import { SubscriptionsService } from './subscriptions.service';
 
 describe('SubscriptionsService', () => {
@@ -16,6 +17,7 @@ describe('SubscriptionsService', () => {
     };
   };
   let plansService: { findById: jest.Mock };
+  let paymentsService: { triggerSTkPush: jest.Mock };
   let notificationsService: { send: jest.Mock };
 
   beforeEach(async () => {
@@ -29,6 +31,7 @@ describe('SubscriptionsService', () => {
     };
 
     plansService = { findById: jest.fn() };
+    paymentsService = { triggerSTkPush: jest.fn() };
     notificationsService = { send: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -36,6 +39,7 @@ describe('SubscriptionsService', () => {
         SubscriptionsService,
         { provide: PrismaService, useValue: prisma },
         { provide: PlansService, useValue: plansService },
+        { provide: PaymentsService, useValue: paymentsService },
         { provide: NotificationsService, useValue: notificationsService },
       ],
     }).compile();
@@ -104,6 +108,53 @@ describe('SubscriptionsService', () => {
     prisma.subscription.findFirst.mockResolvedValue(null);
 
     await expect(service.getSubscriptionById('merchant_1', 'missing_sub')).rejects.toThrow(NotFoundException);
+  });
+
+  it('returns a customer billing portal view with recent payment activity', async () => {
+    prisma.subscription.findFirst.mockResolvedValue({
+      id: 'sub_1',
+      merchantId: 'merchant_1',
+      customerPhone: '254712345678',
+      status: 'ACTIVE',
+      nextBillingDate: new Date('2026-10-01T00:00:00.000Z'),
+      createdAt: new Date('2026-09-01T00:00:00.000Z'),
+      plan: { id: 'plan_1', name: 'Gold', amount: 1200 },
+      paymentAttempts: [
+        { id: 'attempt_1', status: 'SUCCEEDED', amount: 1200, createdAt: new Date('2026-09-15T00:00:00.000Z') },
+        { id: 'attempt_2', status: 'FAILED', amount: 1200, createdAt: new Date('2026-09-20T00:00:00.000Z') },
+      ],
+    });
+
+    const result = await service.getCustomerPortal('merchant_1', 'sub_1');
+
+    expect(result).toMatchObject({
+      subscriptionId: 'sub_1',
+      customerPhone: '254712345678',
+      status: 'ACTIVE',
+      nextBillingDate: new Date('2026-10-01T00:00:00.000Z'),
+      currentPlan: { id: 'plan_1', name: 'Gold', amount: 1200 },
+      recentPayments: [
+        expect.objectContaining({ id: 'attempt_1', status: 'SUCCEEDED', amount: 1200 }),
+        expect.objectContaining({ id: 'attempt_2', status: 'FAILED', amount: 1200 }),
+      ],
+    });
+  });
+
+  it('triggers a payment request for the customer billing portal', async () => {
+    prisma.subscription.findFirst.mockResolvedValue({
+      id: 'sub_1',
+      merchantId: 'merchant_1',
+      customerPhone: '254712345678',
+      status: 'ACTIVE',
+      nextBillingDate: new Date('2026-10-01T00:00:00.000Z'),
+      plan: { id: 'plan_1', name: 'Gold', amount: 1200 },
+    });
+    paymentsService.triggerSTkPush.mockResolvedValue({ message: 'Payment request sent' });
+
+    const result = await service.payNow('merchant_1', 'sub_1');
+
+    expect(paymentsService.triggerSTkPush).toHaveBeenCalledWith('sub_1');
+    expect(result).toEqual({ message: 'Payment request sent', subscriptionId: 'sub_1' });
   });
 
   it('cancels a subscription and sends the cancellation notification', async () => {

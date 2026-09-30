@@ -5,6 +5,7 @@ import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { normalizePhone } from '../common/utils/phone.util';
 import { SubscriptionStatus } from '../generated/prisma/enums';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PaymentsService } from '../payments/payments.service';
 
 const subscriptionSelect = {
     id: true,
@@ -12,13 +13,14 @@ const subscriptionSelect = {
     nextBillingDate: true,
     status: true,
     createdAt: true,
-}
+};
 
 @Injectable()
 export class SubscriptionsService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly plansService: PlansService,
+        private readonly paymentsService: PaymentsService,
         private readonly notificationsService: NotificationsService,
     ) {}
 
@@ -34,12 +36,12 @@ export class SubscriptionsService {
                 nextBillingDate: new Date(),
             },
             select: subscriptionSelect,
-        })
+        });
 
         return {
             message: 'Subscription created successfully',
             data: subscription,
-        }
+        };
     }
 
     async getAllSubscriptions(merchantId: string) {
@@ -49,14 +51,70 @@ export class SubscriptionsService {
         });
     }
 
+    async getCustomerPortal(merchantId: string, subscriptionId: string) {
+        const subscription = await this.prisma.subscription.findFirst({
+            where: { id: subscriptionId, merchantId },
+            select: {
+                id: true,
+                customerPhone: true,
+                status: true,
+                nextBillingDate: true,
+                createdAt: true,
+                plan: {
+                    select: {
+                        id: true,
+                        name: true,
+                        amount: true,
+                    },
+                },
+                paymentAttempts: {
+                    orderBy: { createdAt: 'desc' },
+                    take: 10,
+                    select: {
+                        id: true,
+                        status: true,
+                        amount: true,
+                        createdAt: true,
+                    },
+                },
+            },
+        });
+
+        if (!subscription) {
+            throw new NotFoundException('Subscription not found');
+        }
+
+        return {
+            subscriptionId: subscription.id,
+            customerPhone: subscription.customerPhone,
+            status: subscription.status,
+            nextBillingDate: subscription.nextBillingDate,
+            createdAt: subscription.createdAt,
+            currentPlan: subscription.plan,
+            recentPayments: subscription.paymentAttempts,
+        };
+    }
+
+    async payNow(merchantId: string, subscriptionId: string) {
+        await this.getSubscriptionById(merchantId, subscriptionId);
+        await this.paymentsService.triggerSTkPush(subscriptionId);
+
+        return {
+            message: 'Payment request sent',
+            subscriptionId,
+        };
+    }
+
     async getSubscriptionById(merchantId: string, subscriptionId: string) {
         const subscription = await this.prisma.subscription.findFirst({
             where: { id: subscriptionId, merchantId },
             select: subscriptionSelect,
         });
+
         if (!subscription) {
             throw new NotFoundException('Subscription not found');
         }
+
         return subscription;
     }
 
@@ -70,7 +128,8 @@ export class SubscriptionsService {
 
         await this.notificationsService.send(merchantId, 'subscription.cancelled', {
             subscriptionId,
-        })
+        });
+
         return cancelledSubscription;
     }
 }

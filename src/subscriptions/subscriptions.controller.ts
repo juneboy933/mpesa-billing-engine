@@ -18,8 +18,8 @@ export class SubscriptionsController {
     @ApiOperation({ summary: 'Create a new subscription for the authenticated merchant' })
     @ApiResponse({ status: 201, description: 'Subscription created successfully' })
     async createSubscription(
-        @Req() req: AuthenticatedRequest, 
-        @Body() dto: CreateSubscriptionDto
+        @Req() req: AuthenticatedRequest,
+        @Body() dto: CreateSubscriptionDto,
     ) {
         return await this.subscriptionsService.createSubscription(req.merchant.id, dto);
     }
@@ -37,13 +37,32 @@ export class SubscriptionsController {
     @ApiOperation({ summary: 'Get a specific subscription by ID for the authenticated merchant' })
     @ApiResponse({ status: 200, description: 'Subscription retrieved successfully' })
     async getSubscriptionById(
-        @Req() req: AuthenticatedRequest, 
-        @Param('subscriptionId') subscriptionId: string
+        @Req() req: AuthenticatedRequest,
+        @Param('subscriptionId') subscriptionId: string,
     ) {
-        return await this.subscriptionsService.getSubscriptionById(
-            req.merchant.id, 
-            subscriptionId
-        );
+        return await this.subscriptionsService.getSubscriptionById(req.merchant.id, subscriptionId);
+    }
+
+    @Get(':subscriptionId/portal')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Get the customer billing portal view for a subscription' })
+    @ApiResponse({ status: 200, description: 'Customer billing portal retrieved successfully' })
+    async getCustomerPortal(
+        @Req() req: AuthenticatedRequest,
+        @Param('subscriptionId') subscriptionId: string,
+    ) {
+        return await this.subscriptionsService.getCustomerPortal(req.merchant.id, subscriptionId);
+    }
+
+    @Post(':subscriptionId/pay-now')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Trigger an immediate M-Pesa billing attempt for the customer' })
+    @ApiResponse({ status: 200, description: 'Payment request sent successfully' })
+    async payNow(
+        @Req() req: AuthenticatedRequest,
+        @Param('subscriptionId') subscriptionId: string,
+    ) {
+        return await this.subscriptionsService.payNow(req.merchant.id, subscriptionId);
     }
 
     @Patch(':subscriptionId/cancel')
@@ -51,12 +70,9 @@ export class SubscriptionsController {
     @ApiOperation({ summary: 'Cancel a subscription for the authenticated merchant' })
     @ApiResponse({ status: 200, description: 'Subscription canceled successfully' })
     async cancelSubscription(
-        @Req() req: AuthenticatedRequest, 
-        @Param('subscriptionId') subscriptionId: string
+        @Req() req: AuthenticatedRequest,
+        @Param('subscriptionId') subscriptionId: string,
     ) {
-        return await this.subscriptionsService.cancelSubscription(
-            req.merchant.id, 
-            subscriptionId
-        );
+        return await this.subscriptionsService.cancelSubscription(req.merchant.id, subscriptionId);
     }
 }
