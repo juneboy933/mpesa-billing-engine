@@ -23,6 +23,14 @@ export class MerchantsController {
         return await this.merchantsService.create(dto);
     }
 
+    @Get('analytics')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Get merchant revenue and retention analytics for the active account' })
+    @ApiResponse({ status: 200, description: 'Analytics summary retrieved successfully' })
+    async getAnalyticsSummary(@Req() req: AuthenticatedUser) {
+        return await this.merchantsService.getAnalyticsSummary(req.merchant.id);
+    }
+
     @Patch('me')
     @ApiSecurity('api-key')
     @ApiOperation({ summary: 'Update merchant webhook URL'})
