@@ -3,6 +3,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { PlansService } from '../plans/plans.service';
+import { PaymentsService } from '../payments/payments.service';
 import { SubscriptionsService } from './subscriptions.service';
 
 describe('SubscriptionsService', () => {
@@ -16,6 +17,7 @@ describe('SubscriptionsService', () => {
     };
   };
   let plansService: { findById: jest.Mock };
+  let paymentsService: { getReceipts: jest.Mock; getReceiptById: jest.Mock };
   let notificationsService: { send: jest.Mock };
 
   beforeEach(async () => {
@@ -29,6 +31,7 @@ describe('SubscriptionsService', () => {
     };
 
     plansService = { findById: jest.fn() };
+    paymentsService = { getReceipts: jest.fn(), getReceiptById: jest.fn() };
     notificationsService = { send: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -36,6 +39,7 @@ describe('SubscriptionsService', () => {
         SubscriptionsService,
         { provide: PrismaService, useValue: prisma },
         { provide: PlansService, useValue: plansService },
+        { provide: PaymentsService, useValue: paymentsService },
         { provide: NotificationsService, useValue: notificationsService },
       ],
     }).compile();

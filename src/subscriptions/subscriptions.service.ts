@@ -5,6 +5,7 @@ import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { normalizePhone } from '../common/utils/phone.util';
 import { SubscriptionStatus } from '../generated/prisma/enums';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PaymentsService } from '../payments/payments.service';
 
 const subscriptionSelect = {
     id: true,
@@ -19,6 +20,7 @@ export class SubscriptionsService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly plansService: PlansService,
+        private readonly paymentsService: PaymentsService,
         private readonly notificationsService: NotificationsService,
     ) {}
 
@@ -47,6 +49,14 @@ export class SubscriptionsService {
             where: { merchantId },
             select: subscriptionSelect,
         });
+    }
+
+    async getReceipts(merchantId: string, subscriptionId: string) {
+        return await this.paymentsService.getReceipts(merchantId, subscriptionId);
+    }
+
+    async getReceiptById(merchantId: string, subscriptionId: string, receiptId: string) {
+        return await this.paymentsService.getReceiptById(merchantId, subscriptionId, receiptId);
     }
 
     async getSubscriptionById(merchantId: string, subscriptionId: string) {
