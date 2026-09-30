@@ -51,6 +51,54 @@ export class SubscriptionsService {
         });
     }
 
+    async getRetryQueue(merchantId: string) {
+        const subscriptions = await this.prisma.subscription.findMany({
+            where: {
+                merchantId,
+                status: { in: [SubscriptionStatus.RETRYING, SubscriptionStatus.PAST_DUE] },
+            },
+            orderBy: { nextBillingDate: 'asc' },
+            select: {
+                id: true,
+                customerPhone: true,
+                status: true,
+                nextBillingDate: true,
+                createdAt: true,
+                plan: {
+                    select: {
+                        id: true,
+                        name: true,
+                        amount: true,
+                    },
+                },
+            },
+        });
+
+        const orderedSubscriptions = [...subscriptions].sort(
+            (first, second) => new Date(first.nextBillingDate).getTime() - new Date(second.nextBillingDate).getTime(),
+        );
+
+        return {
+            total: orderedSubscriptions.length,
+            retrying: orderedSubscriptions.filter((subscription) => subscription.status === SubscriptionStatus.RETRYING).length,
+            pastDue: orderedSubscriptions.filter((subscription) => subscription.status === SubscriptionStatus.PAST_DUE).length,
+            subscriptions: orderedSubscriptions,
+        };
+    }
+
+    async triggerRetry(merchantId: string, subscriptionId: string) {
+        const subscription = await this.prisma.subscription.findFirst({
+            where: { id: subscriptionId, merchantId },
+            select: { id: true },
+        });
+
+        if (!subscription) {
+            throw new NotFoundException('Subscription not found');
+        }
+
+        return await this.paymentsService.triggerSTkPush(subscriptionId);
+    }
+
     async getManagementOverview(merchantId: string) {
         const subscriptions = await this.prisma.subscription.findMany({
             where: { merchantId },

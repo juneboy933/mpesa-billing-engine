@@ -63,6 +63,25 @@ export class SubscriptionsController {
         return await this.subscriptionsService.getReceiptById(req.merchant.id, subscriptionId, receiptId);
     }
 
+    @Get('retry-queue')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Get the merchant retry queue for subscriptions needing collection recovery' })
+    @ApiResponse({ status: 200, description: 'Retry queue retrieved successfully' })
+    async getRetryQueue(@Req() req: AuthenticatedRequest) {
+        return await this.subscriptionsService.getRetryQueue(req.merchant.id);
+    }
+
+    @Post(':subscriptionId/retry')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Trigger an immediate retry for a subscription in the dunning queue' })
+    @ApiResponse({ status: 200, description: 'Retry payment request sent successfully' })
+    async triggerRetry(
+        @Req() req: AuthenticatedRequest,
+        @Param('subscriptionId') subscriptionId: string,
+    ) {
+        return await this.subscriptionsService.triggerRetry(req.merchant.id, subscriptionId);
+    }
+
     @Get(':subscriptionId')
     @ApiSecurity('api-key')
     @ApiOperation({ summary: 'Get a specific subscription by ID for the authenticated merchant' })

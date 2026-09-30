@@ -135,6 +135,65 @@ describe('SubscriptionsService', () => {
     await expect(service.getSubscriptionById('merchant_1', 'missing_sub')).rejects.toThrow(NotFoundException);
   });
 
+  it('returns a merchant retry queue with overdue and retrying subscriptions grouped by status', async () => {
+    const subscriptions = [
+      {
+        id: 'sub_1',
+        customerPhone: '254712345678',
+        nextBillingDate: new Date('2026-09-22T00:00:00.000Z'),
+        status: 'RETRYING',
+        createdAt: new Date('2026-09-01T00:00:00.000Z'),
+        plan: { id: 'plan_1', name: 'Gold', amount: 1200 },
+      },
+      {
+        id: 'sub_2',
+        customerPhone: '254712345679',
+        nextBillingDate: new Date('2026-09-18T00:00:00.000Z'),
+        status: 'PAST_DUE',
+        createdAt: new Date('2026-08-20T00:00:00.000Z'),
+        plan: { id: 'plan_2', name: 'Starter', amount: 500 },
+      },
+    ];
+
+    prisma.subscription.findMany.mockResolvedValue(subscriptions);
+
+    const result = await service.getRetryQueue('merchant_1');
+
+    expect(prisma.subscription.findMany).toHaveBeenCalledWith({
+      where: {
+        merchantId: 'merchant_1',
+        status: { in: ['RETRYING', 'PAST_DUE'] },
+      },
+      orderBy: { nextBillingDate: 'asc' },
+      select: {
+        id: true,
+        customerPhone: true,
+        status: true,
+        nextBillingDate: true,
+        createdAt: true,
+        plan: { select: { id: true, name: true, amount: true } },
+      },
+    });
+    expect(result.total).toBe(2);
+    expect(result.retrying).toBe(1);
+    expect(result.pastDue).toBe(1);
+    expect(result.subscriptions[0]).toMatchObject({ id: 'sub_2', status: 'PAST_DUE' });
+  });
+
+  it('triggers an immediate retry for a failed subscription in the dunning queue', async () => {
+    prisma.subscription.findFirst.mockResolvedValue({ id: 'sub_1', merchantId: 'merchant_1' });
+    paymentsService.triggerSTkPush.mockResolvedValue({ message: 'Retry payment request sent' });
+
+    const result = await service.triggerRetry('merchant_1', 'sub_1');
+
+    expect(prisma.subscription.findFirst).toHaveBeenCalledWith({
+      where: { id: 'sub_1', merchantId: 'merchant_1' },
+      select: { id: true },
+    });
+    expect(paymentsService.triggerSTkPush).toHaveBeenCalledWith('sub_1');
+    expect(result).toEqual({ message: 'Retry payment request sent' });
+  });
+
   it('returns a customer billing portal view with recent payment activity', async () => {
     prisma.subscription.findFirst.mockResolvedValue({
       id: 'sub_1',
