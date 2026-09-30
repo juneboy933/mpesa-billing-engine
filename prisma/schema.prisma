@@ -42,12 +42,23 @@ enum WebhookDeliveryStatus {
   FAILED
 }
 
+enum MpesaSetupStatus {
+  PENDING
+  COMPLETED
+}
+
 model Merchant {
   id String @id @default(uuid())
   name String
   apiKeyHash String @unique
   webhookUrl String?
   webhookSecret String?
+  mpesaConsumerKeyEncrypted String?
+  mpesaConsumerSecretEncrypted String?
+  mpesaShortcode String?
+  mpesaPasskeyEncrypted String?
+  mpesaSetupStatus MpesaSetupStatus @default(PENDING)
+  mpesaSetupCompletedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

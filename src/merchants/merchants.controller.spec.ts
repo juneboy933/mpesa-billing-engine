@@ -11,6 +11,8 @@ describe('MerchantsController', () => {
     create: jest.Mock;
     onboard: jest.Mock;
     getDashboard: jest.Mock;
+    setupMpesa: jest.Mock;
+    getMpesaSetupStatus: jest.Mock;
     update: jest.Mock;
     rotateWebhookSecret: jest.Mock;
     getAnalyticsSummary: jest.Mock;
@@ -24,6 +26,8 @@ describe('MerchantsController', () => {
       create: jest.fn(),
       onboard: jest.fn(),
       getDashboard: jest.fn(),
+      setupMpesa: jest.fn(),
+      getMpesaSetupStatus: jest.fn(),
       update: jest.fn(),
       rotateWebhookSecret: jest.fn(),
       getAnalyticsSummary: jest.fn(),
@@ -109,6 +113,22 @@ describe('MerchantsController', () => {
 
       expect(merchantsService.getDashboard).toHaveBeenCalledWith('m1');
       expect(result).toBe(dashboard);
+    });
+  });
+
+  describe('mpesa setup', () => {
+    it('delegates setup and status calls using the authenticated merchant id', async () => {
+      const req = mockRequest('m1');
+      const dto = { consumerKey: 'key', consumerSecret: 'secret', shortcode: '174379', passkey: 'passkey' };
+      const setup = { merchantId: 'm1', status: 'COMPLETED', shortcode: '174379' };
+      const status = { merchantId: 'm1', status: 'COMPLETED', shortcode: '174379' };
+      merchantsService.setupMpesa.mockResolvedValue(setup);
+      merchantsService.getMpesaSetupStatus.mockResolvedValue(status);
+
+      await expect(controller.setupMpesa(req, dto as any)).resolves.toBe(setup);
+      await expect(controller.getMpesaSetupStatus(req)).resolves.toBe(status);
+      expect(merchantsService.setupMpesa).toHaveBeenCalledWith('m1', dto);
+      expect(merchantsService.getMpesaSetupStatus).toHaveBeenCalledWith('m1');
     });
   });
 

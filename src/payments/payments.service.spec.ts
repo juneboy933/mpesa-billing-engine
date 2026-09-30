@@ -5,6 +5,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { DarajaService } from './daraja/daraja.service';
 import { PaymentsService } from './payments.service';
+import { MpesaCredentialsService } from '../merchants/mpesa-credentials.service';
 
 describe('PaymentsService', () => {
   let service: PaymentsService;
@@ -24,6 +25,7 @@ describe('PaymentsService', () => {
   };
   let daraja: { triggerStk: jest.Mock };
   let notification: { send: jest.Mock };
+  let mpesaCredentials: { decrypt: jest.Mock };
 
   it('returns a receipt summary and recent payment history for a subscription', async () => {
     prisma.paymentAttempt.findMany.mockResolvedValue([
@@ -112,6 +114,7 @@ describe('PaymentsService', () => {
     };
     daraja = { triggerStk: jest.fn() };
     notification = { send: jest.fn() };
+    mpesaCredentials = { decrypt: jest.fn((value: string) => value) };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -119,6 +122,7 @@ describe('PaymentsService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: DarajaService, useValue: daraja },
         { provide: NotificationsService, useValue: notification },
+        { provide: MpesaCredentialsService, useValue: mpesaCredentials },
       ],
     }).compile();
 

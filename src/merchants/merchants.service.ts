@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMerchantDto } from './dto/create-merchant.dto';
 import * as crypto from 'crypto';
@@ -6,6 +6,9 @@ import * as argon2 from 'argon2';
 import { UpdateMerchantDto } from './dto/update-merchant.dto';
 import { PaymentAttemptStatus, SubscriptionStatus } from '../generated/prisma/enums';
 import { OnboardMerchantDto } from './dto/onboard-merchant.dto';
+import { SetupMpesaDto } from './dto/setup-mpesa.dto';
+import { DarajaService } from '../payments/daraja/daraja.service';
+import { MpesaCredentialsService } from './mpesa-credentials.service';
 
 const merchantSelect = {
     id: true,
@@ -22,7 +25,58 @@ const merchantSelectWithSecrets = {
 
 @Injectable()
 export class MerchantsService {
-    constructor(private readonly prisma: PrismaService) {}
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly darajaService: DarajaService,
+        private readonly mpesaCredentialsService: MpesaCredentialsService,
+    ) {}
+
+    async setupMpesa(merchantId: string, dto: SetupMpesaDto) {
+        const validation = await this.darajaService.validateCredentials(dto);
+        if (!validation.valid) {
+            throw new BadRequestException(validation.message ?? 'Invalid M-Pesa credentials');
+        }
+
+        const completedAt = new Date();
+        await this.prisma.merchant.update({
+            where: { id: merchantId },
+            data: {
+                mpesaConsumerKeyEncrypted: this.mpesaCredentialsService.encrypt(dto.consumerKey),
+                mpesaConsumerSecretEncrypted: this.mpesaCredentialsService.encrypt(dto.consumerSecret),
+                mpesaShortcode: dto.shortcode,
+                mpesaPasskeyEncrypted: this.mpesaCredentialsService.encrypt(dto.passkey),
+                mpesaSetupStatus: 'COMPLETED',
+                mpesaSetupCompletedAt: completedAt,
+            },
+            select: { id: true, mpesaShortcode: true, mpesaSetupCompletedAt: true },
+        });
+
+        return {
+            merchantId,
+            status: 'COMPLETED',
+            shortcode: dto.shortcode,
+            completedAt,
+        };
+    }
+
+    async getMpesaSetupStatus(merchantId: string) {
+        const merchant = await this.prisma.merchant.findUnique({
+            where: { id: merchantId },
+            select: {
+                id: true,
+                mpesaShortcode: true,
+                mpesaSetupStatus: true,
+                mpesaSetupCompletedAt: true,
+            },
+        });
+
+        return {
+            merchantId: merchant?.id ?? merchantId,
+            status: merchant?.mpesaSetupStatus ?? 'PENDING',
+            shortcode: merchant?.mpesaShortcode ?? null,
+            completedAt: merchant?.mpesaSetupCompletedAt ?? null,
+        };
+    }
 
     async create(dto: CreateMerchantDto) {
         const rawApiKey = `mk_${crypto.randomBytes(32).toString('hex')}`;

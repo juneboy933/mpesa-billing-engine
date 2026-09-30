@@ -1,10 +1,12 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaymentAttemptStatus, SubscriptionStatus } from '../generated/prisma/enums';
 import { DarajaService } from './daraja/daraja.service';
 import { StkCallbackBody } from './dto/callback.dto';
 import { Prisma } from '../generated/prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
+import { MpesaCredentialsService } from '../merchants/mpesa-credentials.service';
+import { MerchantCredentials } from './daraja/daraja.service';
 
 @Injectable()
 export class PaymentsService {
@@ -14,6 +16,7 @@ export class PaymentsService {
         private readonly prisma: PrismaService,
         private readonly daraja: DarajaService,
         private readonly notification: NotificationsService,
+        private readonly mpesaCredentials: MpesaCredentialsService,
     ) {}
 
     private readonly RETRY_SCHEDULE_DAYS = [1, 3, 7];
@@ -172,10 +175,25 @@ export class PaymentsService {
     async triggerSTkPush(subscriptionId: string) {
         const subscription = await this.prisma.subscription.findUnique({
             where: { id: subscriptionId },
-            include: { plan: true},
+            include: {
+                plan: true,
+                merchant: {
+                    select: {
+                        mpesaConsumerKeyEncrypted: true,
+                        mpesaConsumerSecretEncrypted: true,
+                        mpesaShortcode: true,
+                        mpesaPasskeyEncrypted: true,
+                        mpesaSetupStatus: true,
+                    },
+                },
+            },
         });
 
         if(!subscription) throw new NotFoundException('Subscription not found');
+
+        if (subscription.merchant && subscription.merchant.mpesaSetupStatus !== 'COMPLETED') {
+            throw new BadRequestException('Complete M-Pesa setup before collecting payments');
+        }
         
         const lastAttempt = await this.prisma.paymentAttempt.findFirst({
             where: { subscriptionId },
@@ -210,12 +228,24 @@ export class PaymentsService {
         }
 
         try {
-            const { CheckoutRequestID } = await this.daraja.triggerStk({
+            const merchantCredentials = subscription.merchant?.mpesaSetupStatus === 'COMPLETED'
+                ? {
+                    consumerKey: this.mpesaCredentials.decrypt(subscription.merchant.mpesaConsumerKeyEncrypted!),
+                    consumerSecret: this.mpesaCredentials.decrypt(subscription.merchant.mpesaConsumerSecretEncrypted!),
+                    shortcode: subscription.merchant.mpesaShortcode!,
+                    passkey: this.mpesaCredentials.decrypt(subscription.merchant.mpesaPasskeyEncrypted!),
+                } satisfies MerchantCredentials
+                : undefined;
+
+            const stkPayload = {
                 phone: subscription.customerPhone,
                 amount: Math.round(subscription.plan.amount.toNumber()),
                 accountReference: subscription.plan.name,
-                transactionDec: `${subscription.plan.name} subscription`
-            });
+                transactionDec: `${subscription.plan.name} subscription`,
+            };
+            const { CheckoutRequestID } = merchantCredentials
+                ? await this.daraja.triggerStk(stkPayload, merchantCredentials)
+                : await this.daraja.triggerStk(stkPayload);
 
             await this.prisma.paymentAttempt.update({
                 where: { id: attempt.id },

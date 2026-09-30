@@ -39,6 +39,8 @@ All routes are mounted under `/api` in the application bootstrap.
 ### Merchant routes
 
 - `POST /api/merchants` — public merchant registration; returns the API key and webhook secret once
+- `POST /api/merchants/me/mpesa-setup` — validate and save encrypted merchant PayBill Daraja credentials
+- `GET /api/merchants/me/mpesa-setup` — resume setup by checking the merchant's M-Pesa setup status
 - `PATCH /api/merchants/me` — update the authenticated merchant
 - `POST /api/merchants/me/rotate-webhook-secret` — rotate the merchant webhook secret
 
@@ -113,7 +115,16 @@ MPESA_TOKEN_URL=https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=cli
 STK_PUSH_URL=https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest
 MPESA_CALLBACK_URL=https://your-ngrok-url.ngrok-free.app/api/webhooks/daraja/callback
 DARAJA_CALLBACK_TOKEN=replace-with-a-secret-token
+MPESA_CREDENTIAL_ENCRYPTION_KEY=base64-encoded-32-byte-key
 ```
+
+Each merchant must complete PayBill Daraja setup before collecting payments. Generate the encryption key with:
+
+```bash
+openssl rand -base64 32
+```
+
+The platform stores the consumer key, consumer secret, and passkey encrypted. Merchants only need to provide their own Daraja credentials once; the callback URL remains managed by the platform.
 
 ### 4) Initialize the database
 
