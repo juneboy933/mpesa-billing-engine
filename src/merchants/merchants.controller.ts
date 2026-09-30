@@ -6,6 +6,7 @@ import { Public } from '../common/decorators/public.decorator';
 import { UpdateMerchantDto } from './dto/update-merchant.dto';
 import { Request } from 'express';
 import { OnboardMerchantDto } from './dto/onboard-merchant.dto';
+import { SetupMpesaDto } from './dto/setup-mpesa.dto';
 
 interface AuthenticatedUser extends Request {
     merchant: { id: string },
@@ -46,6 +47,22 @@ export class MerchantsController {
     @ApiResponse({ status: 201, description: 'Merchant and default plan created successfully' })
     async onboard(@Body() dto: OnboardMerchantDto) {
         return await this.merchantsService.onboard(dto);
+    }
+
+    @Post('me/mpesa-setup')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Validate and save the merchant PayBill Daraja credentials' })
+    @ApiResponse({ status: 201, description: 'M-Pesa setup completed successfully' })
+    async setupMpesa(@Req() req: AuthenticatedUser, @Body() dto: SetupMpesaDto) {
+        return await this.merchantsService.setupMpesa(req.merchant.id, dto);
+    }
+
+    @Get('me/mpesa-setup')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Get the authenticated merchant M-Pesa setup status' })
+    @ApiResponse({ status: 200, description: 'M-Pesa setup status retrieved successfully' })
+    async getMpesaSetupStatus(@Req() req: AuthenticatedUser) {
+        return await this.merchantsService.getMpesaSetupStatus(req.merchant.id);
     }
 
     @Patch('me')

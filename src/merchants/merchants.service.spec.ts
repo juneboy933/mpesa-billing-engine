@@ -5,12 +5,16 @@ import { MerchantsService } from './merchants.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMerchantDto } from './dto/create-merchant.dto';
 import { UpdateMerchantDto } from './dto/update-merchant.dto';
+import { DarajaService } from '../payments/daraja/daraja.service';
+import { MpesaCredentialsService } from './mpesa-credentials.service';
 
 jest.mock('argon2');
 jest.mock('crypto');
 
 describe('MerchantsService', () => {
   let service: MerchantsService;
+  let darajaService: { validateCredentials: jest.Mock };
+  let mpesaCredentialsService: { encrypt: jest.Mock };
   let prisma: {
     $transaction: jest.Mock;
     merchant: {
@@ -62,10 +66,15 @@ describe('MerchantsService', () => {
       },
     };
 
+    darajaService = { validateCredentials: jest.fn() };
+    mpesaCredentialsService = { encrypt: jest.fn(() => 'opaque-ciphertext') };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         MerchantsService,
         { provide: PrismaService, useValue: prisma },
+        { provide: DarajaService, useValue: darajaService },
+        { provide: MpesaCredentialsService, useValue: mpesaCredentialsService },
       ],
     }).compile();
 
@@ -83,6 +92,77 @@ describe('MerchantsService', () => {
     });
 
     mockedArgon2.hash.mockResolvedValue('hashed-api-key');
+  });
+
+  describe('setupMpesa', () => {
+    it('validates credentials before storing encrypted merchant PayBill configuration', async () => {
+      const dto = {
+        consumerKey: 'consumer-key',
+        consumerSecret: 'consumer-secret',
+        shortcode: '174379',
+        passkey: 'passkey',
+      };
+      prisma.merchant.update.mockResolvedValue({
+        id: 'm1',
+        mpesaShortcode: dto.shortcode,
+        mpesaSetupCompletedAt: new Date('2026-09-30T00:00:00.000Z'),
+      });
+      darajaService.validateCredentials.mockResolvedValue({ valid: true });
+
+      const result = await service.setupMpesa('m1', dto);
+
+      expect(darajaService.validateCredentials).toHaveBeenCalledWith(dto);
+      expect(mpesaCredentialsService.encrypt).toHaveBeenCalledTimes(3);
+      expect(prisma.merchant.update).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 'm1' },
+        data: expect.objectContaining({
+          mpesaConsumerKeyEncrypted: 'opaque-ciphertext',
+          mpesaConsumerSecretEncrypted: 'opaque-ciphertext',
+          mpesaPasskeyEncrypted: 'opaque-ciphertext',
+          mpesaShortcode: dto.shortcode,
+          mpesaSetupCompletedAt: expect.any(Date),
+        }),
+      }));
+      expect(result).toMatchObject({ merchantId: 'm1', status: 'COMPLETED', shortcode: dto.shortcode });
+      expect(JSON.stringify(prisma.merchant.update.mock.calls[0][0])).not.toContain(dto.consumerSecret);
+    });
+
+    it('does not persist credentials when Daraja validation fails', async () => {
+      darajaService.validateCredentials.mockResolvedValue({ valid: false, message: 'Invalid credentials' });
+
+      await expect(service.setupMpesa('m1', {
+        consumerKey: 'consumer-key',
+        consumerSecret: 'consumer-secret',
+        shortcode: '174379',
+        passkey: 'passkey',
+      })).rejects.toThrow('Invalid credentials');
+
+      expect(prisma.merchant.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('getMpesaSetupStatus', () => {
+    it('returns setup status without exposing encrypted credentials', async () => {
+      prisma.merchant.findUnique.mockResolvedValue({
+        id: 'm1',
+        mpesaShortcode: '174379',
+        mpesaSetupStatus: 'COMPLETED',
+        mpesaSetupCompletedAt: new Date('2026-09-30T00:00:00.000Z'),
+      });
+
+      const result = await service.getMpesaSetupStatus('m1');
+
+      expect(prisma.merchant.findUnique).toHaveBeenCalledWith({
+        where: { id: 'm1' },
+        select: { id: true, mpesaShortcode: true, mpesaSetupStatus: true, mpesaSetupCompletedAt: true },
+      });
+      expect(result).toEqual({
+        merchantId: 'm1',
+        status: 'COMPLETED',
+        shortcode: '174379',
+        completedAt: new Date('2026-09-30T00:00:00.000Z'),
+      });
+    });
   });
 
   describe('onboard', () => {

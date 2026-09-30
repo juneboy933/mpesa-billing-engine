@@ -14,6 +14,13 @@ export interface StkResponse {
     CustomerMessage: string;
 }
 
+export interface MerchantCredentials {
+    consumerKey: string;
+    consumerSecret: string;
+    shortcode: string;
+    passkey: string;
+}
+
 const TOKEN_CACHE_KEY = 'daraja:access_token';
 
 @Injectable()
@@ -25,10 +32,10 @@ export class DarajaService {
         private readonly config: ConfigService,
     ) {}
 
-    async getAccessToken() {
+    async getAccessToken(credentials?: MerchantCredentials) {
         const tokenUrl = this.config.get('MPESA_TOKEN_URL');
-        const consumer = this.config.get('CONSUMER_KEY');
-        const secret = this.config.get('CONSUMER_SECRET');
+        const consumer = credentials?.consumerKey ?? this.config.get('CONSUMER_KEY');
+        const secret = credentials?.consumerSecret ?? this.config.get('CONSUMER_SECRET');
 
         if(!tokenUrl || !consumer || !secret) {
             throw new InternalServerErrorException('Missing tokenUrl or consumer key or consumer secret in your environment variables');
@@ -64,6 +71,24 @@ export class DarajaService {
         }
     }
 
+    async validateCredentials(credentials: MerchantCredentials) {
+        const tokenUrl = this.config.get('MPESA_TOKEN_URL');
+        if (!tokenUrl) {
+            throw new InternalServerErrorException('Missing M-Pesa token URL');
+        }
+
+        try {
+            await axios.get(tokenUrl, {
+                headers: {
+                    Authorization: `Basic ${Buffer.from(`${credentials.consumerKey}:${credentials.consumerSecret}`).toString('base64')}`,
+                },
+            });
+            return { valid: true };
+        } catch {
+            return { valid: false, message: 'Invalid Daraja credentials' };
+        }
+    }
+
     generateTimestamp() {
         const d = new Date();
         return (
@@ -76,32 +101,32 @@ export class DarajaService {
         );
     }
 
-    generatePassword() {
-        const shortCode = this.config.get('SHORT_CODE');
-        const passkey = this.config.get('PASSKEY');
+    generatePassword(shortcode?: string, passkey?: string) {
+        const shortCode = shortcode ?? this.config.get('SHORT_CODE');
+        const configuredPasskey = passkey ?? this.config.get('PASSKEY');
 
-        if(!shortCode || !passkey) {
+        if(!shortCode || !configuredPasskey) {
             throw new InternalServerErrorException('Missing shortCode or passkey in your environment variables');
         }
 
         const timestamp = this.generateTimestamp();
-        const password = Buffer.from(`${shortCode}${passkey}${timestamp}`).toString('base64');
+        const password = Buffer.from(`${shortCode}${configuredPasskey}${timestamp}`).toString('base64');
 
         return password;
     }
 
-    async triggerStk(dto: CreateStkDto): Promise <StkResponse> {
+    async triggerStk(dto: CreateStkDto, credentials?: MerchantCredentials): Promise <StkResponse> {
         const stkPushUrl = this.config.get('STK_PUSH_URL');
-        const shortCode = this.config.get('SHORT_CODE');
+        const shortCode = credentials?.shortcode ?? this.config.get('SHORT_CODE');
         const callback = this.config.get('MPESA_CALLBACK_URL');
 
         if(!stkPushUrl || !shortCode || !callback) {
             throw new InternalServerErrorException('Missing stkPushUrl or shortCode or callback from the environment variables');
         }
 
-        const token = await this.getAccessToken();
+        const token = await this.getAccessToken(credentials);
         const timestamp = this.generateTimestamp();
-        const password = this.generatePassword();
+        const password = this.generatePassword(shortCode, credentials?.passkey);
 
         const normalizedPhone = normalizePhone(dto.phone);
         const payload = {
