@@ -25,6 +25,76 @@ describe('PaymentsService', () => {
   let daraja: { triggerStk: jest.Mock };
   let notification: { send: jest.Mock };
 
+  it('returns a receipt summary and recent payment history for a subscription', async () => {
+    prisma.paymentAttempt.findMany.mockResolvedValue([
+      {
+        id: 'attempt_1',
+        status: PaymentAttemptStatus.SUCCEEDED,
+        amount: 1200,
+        createdAt: new Date('2026-09-10T00:00:00.000Z'),
+        resolvedAt: new Date('2026-09-10T00:00:00.000Z'),
+        subscription: {
+          id: 'sub_1',
+          customerPhone: '254712345678',
+          nextBillingDate: new Date('2026-10-10T00:00:00.000Z'),
+          plan: { id: 'plan_1', name: 'Gold' },
+        },
+      },
+      {
+        id: 'attempt_2',
+        status: PaymentAttemptStatus.FAILED,
+        amount: 1200,
+        createdAt: new Date('2026-09-20T00:00:00.000Z'),
+        resolvedAt: new Date('2026-09-20T00:00:00.000Z'),
+        subscription: {
+          id: 'sub_1',
+          customerPhone: '254712345678',
+          nextBillingDate: new Date('2026-10-10T00:00:00.000Z'),
+          plan: { id: 'plan_1', name: 'Gold' },
+        },
+      },
+    ]);
+
+    const result = await service.getReceipts('merchant_1', 'sub_1');
+
+    expect(result).toMatchObject({
+      subscriptionId: 'sub_1',
+      customerPhone: '254712345678',
+      currentPlan: 'Gold',
+      totalPayments: 2,
+      receipts: [
+        expect.objectContaining({ id: 'attempt_1', status: PaymentAttemptStatus.SUCCEEDED, amount: 1200 }),
+        expect.objectContaining({ id: 'attempt_2', status: PaymentAttemptStatus.FAILED, amount: 1200 }),
+      ],
+    });
+  });
+
+  it('returns a single receipt payload for a specific payment attempt', async () => {
+    prisma.paymentAttempt.findFirst.mockResolvedValue({
+      id: 'attempt_1',
+      status: PaymentAttemptStatus.SUCCEEDED,
+      amount: 1200,
+      createdAt: new Date('2026-09-10T00:00:00.000Z'),
+      resolvedAt: new Date('2026-09-10T00:00:00.000Z'),
+      subscription: {
+        id: 'sub_1',
+        customerPhone: '254712345678',
+        plan: { id: 'plan_1', name: 'Gold' },
+      },
+    });
+
+    const result = await service.getReceiptById('merchant_1', 'sub_1', 'attempt_1');
+
+    expect(result).toMatchObject({
+      receiptId: 'attempt_1',
+      subscriptionId: 'sub_1',
+      customerPhone: '254712345678',
+      planName: 'Gold',
+      amount: 1200,
+      status: PaymentAttemptStatus.SUCCEEDED,
+    });
+  });
+
   beforeEach(async () => {
     prisma = {
       paymentAttempt: {

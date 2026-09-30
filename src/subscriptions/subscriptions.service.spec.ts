@@ -17,7 +17,7 @@ describe('SubscriptionsService', () => {
     };
   };
   let plansService: { findById: jest.Mock };
-  let paymentsService: { triggerSTkPush: jest.Mock };
+  let paymentsService: { getReceipts: jest.Mock; getReceiptById: jest.Mock; triggerSTkPush: jest.Mock };
   let notificationsService: { send: jest.Mock };
 
   beforeEach(async () => {
@@ -31,7 +31,7 @@ describe('SubscriptionsService', () => {
     };
 
     plansService = { findById: jest.fn() };
-    paymentsService = { triggerSTkPush: jest.fn() };
+    paymentsService = { getReceipts: jest.fn(), getReceiptById: jest.fn(), triggerSTkPush: jest.fn() };
     notificationsService = { send: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({

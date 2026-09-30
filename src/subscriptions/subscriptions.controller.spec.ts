@@ -14,6 +14,9 @@ describe('SubscriptionsController', () => {
           useValue: {
             createSubscription: jest.fn(),
             getAllSubscriptions: jest.fn(),
+            getReceipts: jest.fn(),
+            getReceiptById: jest.fn(),
+            getManagementOverview: jest.fn(),
             getSubscriptionById: jest.fn(),
             getCustomerPortal: jest.fn(),
             payNow: jest.fn(),

@@ -40,6 +40,29 @@ export class SubscriptionsController {
         return await this.subscriptionsService.getManagementOverview(req.merchant.id);
     }
 
+    @Get(':subscriptionId/receipts')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Get all payment receipts for a subscription' })
+    @ApiResponse({ status: 200, description: 'Receipts retrieved successfully' })
+    async getReceipts(
+        @Req() req: AuthenticatedRequest,
+        @Param('subscriptionId') subscriptionId: string,
+    ) {
+        return await this.subscriptionsService.getReceipts(req.merchant.id, subscriptionId);
+    }
+
+    @Get(':subscriptionId/receipts/:receiptId')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Get a single payment receipt for a subscription' })
+    @ApiResponse({ status: 200, description: 'Receipt retrieved successfully' })
+    async getReceiptById(
+        @Req() req: AuthenticatedRequest,
+        @Param('subscriptionId') subscriptionId: string,
+        @Param('receiptId') receiptId: string,
+    ) {
+        return await this.subscriptionsService.getReceiptById(req.merchant.id, subscriptionId, receiptId);
+    }
+
     @Get(':subscriptionId')
     @ApiSecurity('api-key')
     @ApiOperation({ summary: 'Get a specific subscription by ID for the authenticated merchant' })

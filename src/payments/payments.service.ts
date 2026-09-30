@@ -86,6 +86,89 @@ export class PaymentsService {
         }
     }
 
+    async getReceipts(merchantId: string, subscriptionId: string) {
+        const attempts = await this.prisma.paymentAttempt.findMany({
+            where: {
+                subscriptionId,
+                subscription: { merchantId },
+            },
+            orderBy: { createdAt: 'desc' },
+            include: {
+                subscription: {
+                    select: {
+                        id: true,
+                        customerPhone: true,
+                        plan: {
+                            select: {
+                                name: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        if (!attempts.length) {
+            throw new NotFoundException('No payment receipts found for this subscription');
+        }
+
+        const receipts = attempts.map((attempt) => ({
+            id: attempt.id,
+            status: attempt.status,
+            amount: Number(attempt.amount),
+            createdAt: attempt.createdAt,
+            resolvedAt: attempt.resolvedAt,
+            receiptNumber: `RCPT-${attempt.id.slice(-6).toUpperCase()}`,
+        }));
+
+        return {
+            subscriptionId,
+            customerPhone: attempts[0].subscription.customerPhone,
+            currentPlan: attempts[0].subscription.plan.name,
+            totalPayments: receipts.length,
+            receipts,
+        };
+    }
+
+    async getReceiptById(merchantId: string, subscriptionId: string, paymentAttemptId: string) {
+        const attempt = await this.prisma.paymentAttempt.findFirst({
+            where: {
+                id: paymentAttemptId,
+                subscriptionId,
+                subscription: { merchantId },
+            },
+            include: {
+                subscription: {
+                    select: {
+                        id: true,
+                        customerPhone: true,
+                        plan: {
+                            select: {
+                                name: true,
+                            },
+                        },
+                    },
+                },
+            },
+        });
+
+        if (!attempt) {
+            throw new NotFoundException('Receipt not found');
+        }
+
+        return {
+            receiptId: attempt.id,
+            subscriptionId: attempt.subscription.id,
+            customerPhone: attempt.subscription.customerPhone,
+            planName: attempt.subscription.plan.name,
+            amount: Number(attempt.amount),
+            status: attempt.status,
+            createdAt: attempt.createdAt,
+            resolvedAt: attempt.resolvedAt,
+            receiptNumber: `RCPT-${attempt.id.slice(-6).toUpperCase()}`,
+        };
+    }
+
     async triggerSTkPush(subscriptionId: string) {
         const subscription = await this.prisma.subscription.findUnique({
             where: { id: subscriptionId },
