@@ -3,6 +3,7 @@ import { NotificationsService } from './notifications.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { MerchantsService } from '../merchants/merchants.service';
 import { WebhookDeliveryStatus } from '../generated/prisma/enums';
+import { CradleVoicesService } from './cradle-voices.service';
 
 describe('NotificationsService', () => {
   let service: NotificationsService;
@@ -11,6 +12,7 @@ describe('NotificationsService', () => {
   };
   let queue: { add: jest.Mock };
   let merchantsService: { findWebhookConfig: jest.Mock };
+  let cradleVoices: { sendSms: jest.Mock };
 
   beforeEach(async () => {
     prisma = {
@@ -20,6 +22,7 @@ describe('NotificationsService', () => {
     };
     queue = { add: jest.fn() };
     merchantsService = { findWebhookConfig: jest.fn() };
+    cradleVoices = { sendSms: jest.fn() };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -27,6 +30,7 @@ describe('NotificationsService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: MerchantsService, useValue: merchantsService },
         { provide: 'BullQueue_webhook-delivery', useValue: queue },
+        { provide: CradleVoicesService, useValue: cradleVoices },
       ],
     }).compile();
 
@@ -63,5 +67,13 @@ describe('NotificationsService', () => {
       { deliveryId: 'delivery_1' },
       { attempts: 5, backoff: { type: 'exponential', delay: 2000 } },
     );
+  });
+
+  it('delegates SMS delivery to the configured provider', async () => {
+    cradleVoices.sendSms.mockResolvedValue({ accepted: true });
+
+    await expect(service.sendSms('Your code is 482913.', ['254700000000']))
+      .resolves.toEqual({ accepted: true });
+    expect(cradleVoices.sendSms).toHaveBeenCalledWith('Your code is 482913.', ['254700000000']);
   });
 });
