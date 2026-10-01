@@ -26,6 +26,14 @@ export type MerchantRegistration = {
   apiKey: string
 }
 
+export type OnboardingStatus = {
+  merchantId: string
+  businessName: string | null
+  mpesaSetup: { status: string; completedAt: string | null }
+  firstPlan: { status: string; plan?: unknown }
+  nextStep: 'MPESA_SETUP' | 'FIRST_PLAN' | 'DASHBOARD'
+}
+
 export const api = {
   registerMerchant: (name: string, phoneNumber: string) =>
     request<MerchantRegistration>('/merchants', { method: 'POST', body: { name, phoneNumber } }),
@@ -33,5 +41,10 @@ export const api = {
     request<{ message: string }>('/auth/otp/request', { method: 'POST', body: { phone } }),
   verifyOtp: (phone: string, code: string) =>
     request<{ merchantId: string; expiresIn: number }>('/auth/otp/verify', { method: 'POST', body: { phone, code } }),
+  getOnboardingStatus: () => request<OnboardingStatus>('/merchants/me/onboarding'),
+  setupMpesa: (credentials: { consumerKey: string; consumerSecret: string; shortcode: string; passkey: string }) =>
+    request('/merchants/me/mpesa-setup', { method: 'POST', body: credentials }),
+  createFirstPlan: (name: string, amount: number) =>
+    request('/merchants/me/onboarding/plan', { method: 'POST', body: { name, amount } }),
   logout: () => request<{ message: string }>('/auth/logout', { method: 'POST' }),
 }
