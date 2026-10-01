@@ -14,6 +14,7 @@ import { PaymentsModule } from './payments/payments.module';
 import { BillingModule } from './billing/billing.module';
 import { BullModule } from '@nestjs/bullmq';
 import { NotificationsModule } from './notifications/notifications.module';
+import { AuthModule } from './auth/auth.module';
 
 export const { ObserveModule, ObserveInstrument } = createObserveModule();
 
@@ -45,6 +46,7 @@ export const { ObserveModule, ObserveInstrument } = createObserveModule();
     PaymentsModule,
     BillingModule,
     NotificationsModule,
+    AuthModule,
   ],
   controllers: [AppController ],
   providers: [

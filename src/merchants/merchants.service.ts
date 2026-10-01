@@ -10,6 +10,7 @@ import { SetupMpesaDto } from './dto/setup-mpesa.dto';
 import { DarajaService } from '../payments/daraja/daraja.service';
 import { MpesaCredentialsService } from './mpesa-credentials.service';
 import { CreatePlanDto } from '../plans/dto/create-plan.dto';
+import { normalizePhone } from '../common/utils/phone.util';
 
 const merchantSelect = {
     id: true,
@@ -171,17 +172,27 @@ export class MerchantsService {
         const apiKeyHash = await argon2.hash(rawApiKey);
         const webhookSecret = `whsec_${crypto.randomBytes(32).toString('hex')}`;
 
+        const data = {
+            name: dto.name,
+            ...(dto.phoneNumber ? { phoneNumber: normalizePhone(dto.phoneNumber) } : {}),
+            webhookUrl: dto.webhookUrl,
+            apiKeyHash: apiKeyHash,
+            webhookSecret,
+        };
+
         const merchant = await this.prisma.merchant.create({
-            data: {
-                name: dto.name,
-                webhookUrl: dto.webhookUrl,
-                apiKeyHash: apiKeyHash,
-                webhookSecret,
-            },
+            data,
             select: merchantSelect
         });
 
         return { merchant, apiKey: rawApiKey, webhookSecret };
+    }
+
+    async findByPhoneNumber(phoneNumber: string) {
+        return await this.prisma.merchant.findUnique({
+            where: { phoneNumber },
+            select: { id: true, name: true, phoneNumber: true },
+        });
     }
 
     async onboard(dto: OnboardMerchantDto) {
