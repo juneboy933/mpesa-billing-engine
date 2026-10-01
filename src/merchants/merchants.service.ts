@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { CreateMerchantDto } from './dto/create-merchant.dto';
 import * as crypto from 'crypto';
@@ -180,10 +180,23 @@ export class MerchantsService {
             webhookSecret,
         };
 
-        const merchant = await this.prisma.merchant.create({
-            data,
-            select: merchantSelect
-        });
+        let merchant;
+        try {
+            merchant = await this.prisma.merchant.create({
+                data,
+                select: merchantSelect,
+            });
+        } catch (error) {
+            if (error instanceof Object && 'code' in error && error.code === 'P2002') {
+                const target = 'meta' in error && error.meta && typeof error.meta === 'object' && 'target' in error.meta
+                    ? String(error.meta.target)
+                    : '';
+                if (target.includes('phoneNumber')) {
+                    throw new ConflictException('A merchant already exists for this phone number. Sign in to continue.');
+                }
+            }
+            throw error;
+        }
 
         return { merchant, apiKey: rawApiKey, webhookSecret };
     }
