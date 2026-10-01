@@ -191,7 +191,10 @@ export class MerchantsService {
                 const target = 'meta' in error && error.meta && typeof error.meta === 'object' && 'target' in error.meta
                     ? String(error.meta.target)
                     : '';
-                if (target.includes('phoneNumber')) {
+                const adapterConstraint = 'meta' in error && error.meta && typeof error.meta === 'object'
+                    ? JSON.stringify(error.meta)
+                    : '';
+                if (dto.phoneNumber && (target.includes('phoneNumber') || adapterConstraint.includes('phoneNumber'))) {
                     throw new ConflictException('A merchant already exists for this phone number. Sign in to continue.');
                 }
             }

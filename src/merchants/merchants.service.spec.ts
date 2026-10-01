@@ -307,7 +307,11 @@ describe('MerchantsService', () => {
     it('returns a conflict when the phone number is already registered', async () => {
       prisma.merchant.create.mockRejectedValue({
         code: 'P2002',
-        meta: { target: ['phoneNumber'] },
+        meta: {
+          driverAdapterError: {
+            cause: { constraint: { index: 'Merchant_phoneNumber_key' } },
+          },
+        },
       });
 
       await expect(service.create({ ...dto, phoneNumber: '0712345678' }))
