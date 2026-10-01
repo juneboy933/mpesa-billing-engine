@@ -1,3 +1,4 @@
+import { ConflictException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as argon2 from 'argon2';
 import * as crypto from 'crypto';
@@ -301,6 +302,18 @@ describe('MerchantsService', () => {
       prisma.merchant.create.mockRejectedValue(dbError);
 
       await expect(service.create(dto)).rejects.toThrow(dbError);
+    });
+
+    it('returns a conflict when the phone number is already registered', async () => {
+      prisma.merchant.create.mockRejectedValue({
+        code: 'P2002',
+        meta: { target: ['phoneNumber'] },
+      });
+
+      await expect(service.create({ ...dto, phoneNumber: '0712345678' }))
+        .rejects.toThrow(ConflictException);
+      await expect(service.create({ ...dto, phoneNumber: '0712345678' }))
+        .rejects.toThrow('Sign in to continue');
     });
 
     it('propagates an argon2 hashing failure without creating a merchant', async () => {
