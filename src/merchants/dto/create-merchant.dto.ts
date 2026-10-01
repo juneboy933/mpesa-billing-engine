@@ -12,6 +12,15 @@ export class CreateMerchantDto {
     name: string;
 
     @ApiProperty({
+        description: 'Merchant phone number used for passwordless login',
+        example: '0712345678',
+        required: false,
+    })
+    @IsString()
+    @IsOptional()
+    phoneNumber?: string;
+
+    @ApiProperty({
         description: 'Optional webhook URL where merchant events will be posted',
         example: 'https://api.example.com/webhooks/merchant',
         required: false,

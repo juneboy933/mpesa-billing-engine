@@ -1,14 +1,17 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException } from '@nestjs/common';
+import { CanActivate, ExecutionContext, Injectable, Optional, UnauthorizedException } from '@nestjs/common';
 // import { Observable } from 'rxjs';
 import * as argon2 from 'argon2';
 import { MerchantsService } from '../../../merchants/merchants.service';
 import { Reflector } from '@nestjs/core';
+import { AuthService } from '../../../auth/auth.service';
+import { readCookie, SESSION_COOKIE } from '../../../auth/auth.controller';
 
 @Injectable()
 export class ApiKeyGuard implements CanActivate {
   constructor(
     private readonly merchantsService: MerchantsService,
-    private readonly reflector: Reflector
+    private readonly reflector: Reflector,
+    @Optional() private readonly authService?: AuthService,
   ) {}
 
   async canActivate(
@@ -23,6 +26,15 @@ export class ApiKeyGuard implements CanActivate {
     }
     
     const req = context.switchToHttp().getRequest();
+    const sessionId = readCookie(req.headers.cookie, SESSION_COOKIE);
+    if (sessionId && this.authService) {
+      const session = await this.authService.getSession(sessionId);
+      if (session) {
+        await this.authService.refreshSession(sessionId);
+        req.merchant = session.merchant;
+        return true;
+      }
+    }
     const apiKey = req.headers['x-api-key'];
 
     if(!apiKey || typeof apiKey !== 'string') {
