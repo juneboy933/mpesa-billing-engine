@@ -6,6 +6,7 @@ import { MerchantsService } from '../merchants/merchants.service';
 import * as crypto from 'crypto';
 import { Prisma } from '../generated/prisma/client';
 import { WebhookDeliveryStatus } from '../generated/prisma/enums';
+import { CradleVoicesService } from './cradle-voices.service';
 
 type WebhookEventType =
   | 'payment.succeeded'
@@ -21,7 +22,12 @@ export class NotificationsService {
         @InjectQueue('webhook-delivery') private readonly deliveryQueue: Queue,
         private readonly prisma: PrismaService,
         private readonly merchantsService: MerchantsService,
+        private readonly cradleVoices: CradleVoicesService,
     ) {}
+
+    async sendSms(message: string, phoneNumbers: string[]) {
+        return await this.cradleVoices.sendSms(message, phoneNumbers);
+    }
 
     async send(merchantId: string, eventType: WebhookEventType, data: Record< string, unknown >) {
         const merchant = await this.merchantsService.findWebhookConfig(merchantId);
