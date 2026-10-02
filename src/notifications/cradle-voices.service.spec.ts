@@ -33,7 +33,12 @@ describe('CradleVoicesService', () => {
         message: 'Your NiaFlow code is 482913.',
         phone: ['254768899729', '254794721042'],
       },
-      { headers: { 'Content-Type': 'application/json' } },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'NiaFlow-billing-Engine/1.0',
+        },
+      },
     );
   });
 

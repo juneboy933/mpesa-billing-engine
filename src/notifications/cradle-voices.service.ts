@@ -10,7 +10,7 @@ export interface CradleSmsResponse {
 export class CradleVoicesService {
     constructor(private readonly config: ConfigService) {}
 
-    async sendSms(message: string, phoneNumbers: string[]) {
+    async sendSms(message: string, phoneNumbers: string[]): Promise<CradleSmsResponse> {
         const url = this.config.get<string>('CRADLE_URL');
         const token = this.config.get<string>('CRADLE_TOKEN');
 
@@ -26,7 +26,10 @@ export class CradleVoicesService {
                 phone: phoneNumbers,
             },
             {
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'User-Agent': 'NiaFlow-billing-Engine/1.0', // Custom User-Agent to pass security rules
+                },
             },
         );
 
