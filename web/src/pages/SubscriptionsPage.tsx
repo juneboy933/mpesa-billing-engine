@@ -108,8 +108,8 @@ export function SubscriptionsPage() {
             {receiptsFor === subscription.id && <div className="receipt-history">
               <div className="eyebrow">Payment receipts · {subscription.customerPhone}</div>
               {loadingReceipts ? <p className="muted">Loading receipts...</p> : receiptError ? <ErrorState message={receiptError} /> : receipts ? <>
-                <h3>{receipts.currentPlan} · {receipts.totalPayments} payments</h3>
-                {receipts.receipts.map(receipt => <div className="receipt-row" key={receipt.id}><span><b>{receipt.receiptNumber}</b><small>{new Date(receipt.createdAt).toLocaleString()}</small></span><span className="receipt-amount"><b>KES {receipt.amount.toLocaleString()}</b><small>{receipt.status}</small></span></div>)}
+                <h3>{receipts.currentPlan} · {receipts.totalAttempts} attempts</h3>
+                {receipts.receipts.map(receipt => <div className="receipt-row" key={receipt.id}><span><b>{receipt.receiptNumber ?? 'No M-Pesa receipt'}</b><small>{new Date(receipt.transactionDate ?? receipt.createdAt).toLocaleString()}</small></span><span className="receipt-amount"><b>KES {receipt.amount.toLocaleString()}</b><small>{receipt.status}</small></span></div>)}
               </> : <EmptyState title="No receipts yet" copy="Payment receipts will appear here after a collection attempt." />}
             </div>}
           </div>)}

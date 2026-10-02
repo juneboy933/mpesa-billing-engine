@@ -88,7 +88,7 @@ describe('PaymentsService', () => {
       subscriptionId: 'sub_1',
       customerPhone: '254712345678',
       currentPlan: 'Gold',
-      totalPayments: 2,
+      totalAttempts: 2,
       receipts: [
         expect.objectContaining({ id: 'attempt_1', status: PaymentAttemptStatus.SUCCEEDED, amount: 1200 }),
         expect.objectContaining({ id: 'attempt_2', status: PaymentAttemptStatus.FAILED, amount: 1200 }),
@@ -375,6 +375,86 @@ describe('PaymentsService', () => {
       amount: 1200,
     });
     expect(result).toEqual({ received: true });
+  });
+
+  it('stores the Safaricom receipt and transaction date from a valid callback', async () => {
+    const attempt = {
+      id: 'attempt_1',
+      attemptNumber: 1,
+      subscriptionId: 'sub_1',
+      amount: 1200,
+      subscription: {
+        merchantId: 'merchant_1',
+        customerPhone: '0712345678',
+        nextBillingDate: new Date('2024-01-01T00:00:00.000Z'),
+        plan: { interval: 'MONTHLY' },
+      },
+    };
+    prisma.paymentAttempt.findUnique.mockResolvedValueOnce(attempt).mockResolvedValueOnce(undefined);
+
+    await service.processCallback({
+      Body: {
+        stkCallback: {
+          CheckoutRequestID: 'ws_CO_123',
+          ResultCode: 0,
+          ResultDesc: 'Success',
+          CallbackMetadata: {
+            Item: [
+              { Name: 'Amount', Value: 1200 },
+              { Name: 'MpesaReceiptNumber', Value: 'QWE123ABC' },
+              { Name: 'TransactionDate', Value: 20261002123456 },
+              { Name: 'PhoneNumber', Value: 254712345678 },
+            ],
+          },
+        },
+      },
+    } as any);
+
+    expect(prisma.paymentAttempt.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        status: PaymentAttemptStatus.SUCCEEDED,
+        mpesaReceiptNumber: 'QWE123ABC',
+        mpesaTransactionDate: new Date('2026-10-02T12:34:56.000Z'),
+      }),
+    }));
+  });
+
+  it('keeps a successful callback pending when its amount does not match the attempt', async () => {
+    const attempt = {
+      id: 'attempt_1',
+      attemptNumber: 1,
+      subscriptionId: 'sub_1',
+      amount: 1200,
+      subscription: {
+        merchantId: 'merchant_1',
+        customerPhone: '0712345678',
+        nextBillingDate: new Date('2024-01-01T00:00:00.000Z'),
+        plan: { interval: 'MONTHLY' },
+      },
+    };
+    prisma.paymentAttempt.findUnique.mockResolvedValue(attempt);
+
+    const result = await service.processCallback({
+      Body: {
+        stkCallback: {
+          CheckoutRequestID: 'ws_CO_123',
+          ResultCode: 0,
+          ResultDesc: 'Success',
+          CallbackMetadata: { Item: [{ Name: 'Amount', Value: 1201 }] },
+        },
+      },
+    } as any);
+
+    expect(result).toEqual({ received: true, pending: true });
+    expect(prisma.paymentAttempt.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: { status: PaymentAttemptStatus.PENDING_CONFIRMATION },
+    }));
+    expect(prisma.darajaCallback.upsert).toHaveBeenCalledWith(expect.objectContaining({
+      create: expect.objectContaining({ checkoutId: 'ws_CO_123', processedAt: expect.any(Date) }),
+    }));
+    expect(notification.send).toHaveBeenCalledWith('merchant_1', 'payment.pending_confirmation', expect.objectContaining({
+      reconciliationReason: 'callback_amount_does_not_match_attempt',
+    }));
   });
 
   it('records a late successful callback without reactivating a cancelled subscription', async () => {

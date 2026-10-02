@@ -49,8 +49,8 @@ export type Analytics = { totalSubscriptions: number; activeSubscriptions: numbe
 export type Plan = { id: string; name: string; amount: number | string; interval: string; createdAt: string; subscriptionCount?: number }
 export type Subscription = { id: string; customerPhone: string; status: string; nextBillingDate: string; createdAt: string; plan?: { id?: string; name: string; amount: number | string } }
 export type SubscriptionManagement = { totalSubscriptions: number; activeSubscriptions: number; page: number; pageSize: number; totalPages: number; subscriptions: Subscription[] }
-export type Receipt = { id: string; status: string; amount: number; createdAt: string; resolvedAt: string | null; receiptNumber: string }
-export type SubscriptionReceipts = { subscriptionId: string; customerPhone: string; currentPlan: string; totalPayments: number; receipts: Receipt[] }
+export type Receipt = { id: string; status: string; amount: number; createdAt: string; resolvedAt: string | null; receiptNumber: string | null; transactionDate: string | null }
+export type SubscriptionReceipts = { subscriptionId: string; customerPhone: string; currentPlan: string; totalAttempts: number; receipts: Receipt[] }
 
 export const api = {
   registerMerchant: (name: string, phoneNumber: string, password: string, email?: string) =>

@@ -13,6 +13,7 @@ NiaFlow helps merchants manage recurring plans and collect them through Safarico
 - Daraja credentials are required per merchant in production and encrypted at rest. Shared environment credentials are for local development and tests only.
 - Collection is initiated by an STK Push. A confirmed callback updates the recorded payment attempt and subscription.
 - A payment attempt has a unique billing-cycle idempotency key. Duplicate callbacks do not apply a second state transition. Cancellation blocks later charge attempts and a late successful callback cannot reactivate a cancelled subscription.
+- Successful callbacks are checked against the attempted amount and member phone whenever Daraja supplies those fields. A mismatch stays pending confirmation rather than being counted as collected. Safaricom receipt numbers and transaction dates are retained in receipt history when provided.
 - Clear Daraja rejections enter the 1, 3, and 7 day retry schedule. If the STK request may have reached Daraja but its response is unknown, the attempt stays `PENDING_CONFIRMATION` and automatic charging waits for reconciliation; this avoids prompting a member twice.
 
 ## Architecture and request flow
@@ -91,7 +92,7 @@ npm install
 npm run dev
 ```
 
-The browser defaults to `http://localhost:3000/api`. Set `VITE_API_URL` in the web build environment when the API uses a different base URL. Set `MPESA_CALLBACK_URL` to a public HTTPS callback URL (for local development, use a tunnel) in the form `/api/webhooks/daraja/callback/<DARAJA_CALLBACK_TOKEN>`; configure the same callback token in the API environment.
+The browser defaults to `http://localhost:3000/api`. Set `VITE_API_URL` in the web build environment when the API uses a different base URL. Set `MPESA_CALLBACK_URL` to a public HTTPS callback URL (for local development, use a tunnel) in the form `/api/webhooks/daraja/callback/<DARAJA_CALLBACK_TOKEN>`; configure the same callback token in the API environment. For a local payment test, this URL must tunnel to the local API. A Render callback URL sends the result to the Render database and cannot update a payment attempt stored in the local database. Keep local and deployed callback tokens separate, and rotate any token that has been exposed.
 
 Generate a local 32-byte credential encryption key with:
 
@@ -161,6 +162,7 @@ Lint currently reports three pre-existing unused imports in `src/auth/auth.servi
 ## Operational cautions
 
 - Do not automatically resend a `PENDING_CONFIRMATION` STK request. Reconcile with Daraja before deciding whether another charge is safe.
+- A pending attempt may mean Daraja did not call the configured callback or that the callback reached a different environment. Check the merchant's M-Pesa transaction record before retrying; this application does not yet automatically query Daraja for a missing callback.
 - Keep PostgreSQL backups and Redis availability monitored. Redis outages affect scheduled and queued work.
 - The callback token is a shared platform callback secret, while Daraja payment credentials are merchant-specific.
 - Deploy the API and frontend independently. Apply database migrations deliberately before relying on code that requires them.

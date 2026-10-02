@@ -7,6 +7,7 @@ import { Prisma } from '../generated/prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { MpesaCredentialsService } from '../merchants/mpesa-credentials.service';
 import { MerchantCredentials, StkPushOutcomeUnknownError } from './daraja/daraja.service';
+import { normalizePhone } from '../common/utils/phone.util';
 
 @Injectable()
 export class PaymentsService {
@@ -113,12 +114,14 @@ export class PaymentsService {
     private async notifyPendingConfirmation(
         attempt: { id: string; subscriptionId: string; attemptNumber: number },
         merchantId: string,
+        reconciliationReason?: string,
     ) {
         await this.notification.send(merchantId, 'payment.pending_confirmation', {
             paymentAttemptId: attempt.id,
             subscriptionId: attempt.subscriptionId,
             attemptNumber: attempt.attemptNumber,
             resolutionRequired: true,
+            ...(reconciliationReason ? { reconciliationReason } : {}),
         });
     }
 
@@ -154,14 +157,15 @@ export class PaymentsService {
             amount: Number(attempt.amount),
             createdAt: attempt.createdAt,
             resolvedAt: attempt.resolvedAt,
-            receiptNumber: `RCPT-${attempt.id.slice(-6).toUpperCase()}`,
+            receiptNumber: attempt.mpesaReceiptNumber ?? null,
+            transactionDate: attempt.mpesaTransactionDate,
         }));
 
         return {
             subscriptionId,
             customerPhone: attempts[0].subscription.customerPhone,
             currentPlan: attempts[0].subscription.plan.name,
-            totalPayments: receipts.length,
+            totalAttempts: receipts.length,
             receipts,
         };
     }
@@ -201,7 +205,8 @@ export class PaymentsService {
             status: attempt.status,
             createdAt: attempt.createdAt,
             resolvedAt: attempt.resolvedAt,
-            receiptNumber: `RCPT-${attempt.id.slice(-6).toUpperCase()}`,
+            receiptNumber: attempt.mpesaReceiptNumber ?? null,
+            transactionDate: attempt.mpesaTransactionDate,
         };
     }
 
@@ -420,6 +425,65 @@ export class PaymentsService {
             return { received: true, duplicate: !outcome };
         }
 
+        const metadata = new Map(
+            (stkCallback.CallbackMetadata?.Item ?? []).map(({ Name, Value }) => [Name, Value]),
+        );
+        const callbackAmount = metadata.get('Amount');
+        const callbackPhone = metadata.get('PhoneNumber');
+        const receiptNumber = metadata.get('MpesaReceiptNumber');
+        const transactionDate = this.parseMpesaTransactionDate(metadata.get('TransactionDate'));
+        const expectedAmount = Number(attempt.amount);
+        const receivedAmount = callbackAmount === undefined ? undefined : Number(callbackAmount);
+        let mismatchReason: string | undefined;
+
+        if (receivedAmount !== undefined && (!Number.isFinite(receivedAmount) || receivedAmount !== expectedAmount)) {
+            mismatchReason = 'callback_amount_does_not_match_attempt';
+        }
+        if (callbackPhone !== undefined) {
+            try {
+                const normalizedCallbackPhone = normalizePhone(String(callbackPhone));
+                const normalizedExpectedPhone = normalizePhone(attempt.subscription.customerPhone);
+                if (normalizedCallbackPhone !== normalizedExpectedPhone) {
+                    mismatchReason = 'callback_phone_does_not_match_subscription';
+                }
+            } catch {
+                mismatchReason = 'callback_phone_is_invalid';
+            }
+        }
+        if (typeof receiptNumber === 'string') {
+            const existingReceipt = await this.prisma.paymentAttempt.findUnique({
+                where: { mpesaReceiptNumber: receiptNumber },
+                select: { id: true },
+            });
+            if (existingReceipt && existingReceipt.id !== attempt.id) {
+                mismatchReason = 'mpesa_receipt_is_already_assigned';
+            }
+        }
+
+        if (mismatchReason) {
+            await this.prisma.$transaction(async (tx) => {
+                await tx.paymentAttempt.updateMany({
+                    where: {
+                        id: attempt.id,
+                        status: { in: [PaymentAttemptStatus.INITIATED, PaymentAttemptStatus.PENDING_CONFIRMATION] },
+                    },
+                    data: { status: PaymentAttemptStatus.PENDING_CONFIRMATION },
+                });
+                await tx.darajaCallback.upsert({
+                    where: { checkoutId: stkCallback.CheckoutRequestID },
+                    create: {
+                        checkoutId: stkCallback.CheckoutRequestID,
+                        payload: callback as unknown as Prisma.InputJsonValue,
+                        processedAt: new Date(),
+                    },
+                    update: {},
+                });
+            });
+            this.logger.error(`Successful callback metadata did not match payment attempt ${attempt.id}; leaving it pending confirmation`);
+            await this.notifyPendingConfirmation(attempt, attempt.subscription.merchantId, mismatchReason);
+            return { received: true, pending: true };
+        }
+
         const processed = await this.prisma.$transaction(async (tx) => {
             const transitioned = await tx.paymentAttempt.updateMany({
                 where: {
@@ -428,7 +492,12 @@ export class PaymentsService {
                         in: [PaymentAttemptStatus.INITIATED, PaymentAttemptStatus.PENDING_CONFIRMATION, PaymentAttemptStatus.TIMED_OUT],
                     },
                 },
-                data: { status: PaymentAttemptStatus.SUCCEEDED, resolvedAt: new Date() },
+                data: {
+                    status: PaymentAttemptStatus.SUCCEEDED,
+                    resolvedAt: new Date(),
+                    mpesaReceiptNumber: typeof receiptNumber === 'string' ? receiptNumber : undefined,
+                    mpesaTransactionDate: transactionDate,
+                },
             });
             if (!transitioned.count) {
                 await tx.darajaCallback.updateMany({
@@ -463,6 +532,20 @@ export class PaymentsService {
             amount: Number(attempt.amount),
         })
         return { received: true };
+    }
+
+    private parseMpesaTransactionDate(value: string | number | undefined): Date | undefined {
+        if (value === undefined) return undefined;
+        const digits = String(value);
+        if (!/^\d{14}$/.test(digits)) return undefined;
+        const [, year, month, day, hour, minute, second] = digits.match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})$/)!;
+        const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), Number(second)));
+        if (
+            date.getUTCFullYear() !== Number(year) || date.getUTCMonth() !== Number(month) - 1 ||
+            date.getUTCDate() !== Number(day) || date.getUTCHours() !== Number(hour) ||
+            date.getUTCMinutes() !== Number(minute) || date.getUTCSeconds() !== Number(second)
+        ) return undefined;
+        return date;
     }
 
     private addInterval(date: Date, interval: string): Date {
