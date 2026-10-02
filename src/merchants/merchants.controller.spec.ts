@@ -18,6 +18,7 @@ describe('MerchantsController', () => {
     completeOnboarding: jest.Mock;
     update: jest.Mock;
     rotateWebhookSecret: jest.Mock;
+    rotateApiKey: jest.Mock;
     getAnalyticsSummary: jest.Mock;
   };
 
@@ -36,6 +37,7 @@ describe('MerchantsController', () => {
       completeOnboarding: jest.fn(),
       update: jest.fn(),
       rotateWebhookSecret: jest.fn(),
+      rotateApiKey: jest.fn(),
       getAnalyticsSummary: jest.fn(),
     };
 
@@ -188,6 +190,15 @@ describe('MerchantsController', () => {
 
       await expect(controller.update(req, dto)).rejects.toThrow(error);
     });
+  });
+
+  it('rotates the API key for the authenticated merchant', async () => {
+    const req = mockRequest('m1');
+    const result = { apiKey: 'mk_keyid_secret' };
+    merchantsService.rotateApiKey.mockResolvedValue(result);
+
+    await expect(controller.rotateApiKey(req)).resolves.toBe(result);
+    expect(merchantsService.rotateApiKey).toHaveBeenCalledWith('m1');
   });
 
   describe('rotateWebhookSecret', () => {

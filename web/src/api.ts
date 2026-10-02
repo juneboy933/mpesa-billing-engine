@@ -2,6 +2,16 @@ const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:3000/api'
 
 type ApiOptions = Omit<RequestInit, 'body'> & { body?: unknown }
 
+export class ApiError extends Error {
+  readonly status: number
+
+  constructor(message: string, status: number) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+  }
+}
+
 async function request<T>(path: string, options: ApiOptions = {}) {
   const response = await fetch(`${API_URL}${path}`, {
     ...options,
@@ -16,7 +26,7 @@ async function request<T>(path: string, options: ApiOptions = {}) {
   const data = await response.json().catch(() => ({}))
   if (!response.ok) {
     const message = typeof data.message === 'string' ? data.message : 'Something went wrong. Please try again.'
-    throw new Error(message)
+    throw new ApiError(message, response.status)
   }
   return data as T
 }
@@ -68,4 +78,5 @@ export const api = {
   payNow: (id: string) => request(`/subscriptions/${id}/pay-now`, { method: 'POST' }),
   cancelSubscription: (id: string) => request(`/subscriptions/${id}/cancel`, { method: 'PATCH' }),
   logout: () => request<{ message: string }>('/auth/logout', { method: 'POST' }),
+  rotateApiKey: () => request<{ apiKey: string }>('/merchants/me/rotate-api-key', { method: 'POST' }),
 }

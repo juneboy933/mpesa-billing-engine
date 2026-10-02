@@ -169,15 +169,17 @@ export class MerchantsService {
     }
 
     async create(dto: CreateMerchantDto) {
-        const rawApiKey = `mk_${crypto.randomBytes(32).toString('hex')}`;
-        const apiKeyHash = await argon2.hash(rawApiKey);
+        const generatedApiKey = await this.generateApiKey();
+        const rawApiKey = generatedApiKey.raw;
+        const apiKeyHash = generatedApiKey.hash;
         const webhookSecret = `whsec_${crypto.randomBytes(32).toString('hex')}`;
 
         const data = {
             name: dto.name,
             ...(dto.phoneNumber ? { phoneNumber: normalizePhone(dto.phoneNumber) } : {}),
             webhookUrl: dto.webhookUrl,
-            apiKeyHash: apiKeyHash,
+            apiKeyId: generatedApiKey.id,
+            apiKeyHash,
             webhookSecret,
         };
 
@@ -213,8 +215,9 @@ export class MerchantsService {
     }
 
     async onboard(dto: OnboardMerchantDto) {
-        const rawApiKey = `mk_${crypto.randomBytes(32).toString('hex')}`;
-        const apiKeyHash = await argon2.hash(rawApiKey);
+        const generatedApiKey = await this.generateApiKey();
+        const rawApiKey = generatedApiKey.raw;
+        const apiKeyHash = generatedApiKey.hash;
         const webhookSecret = `whsec_${crypto.randomBytes(32).toString('hex')}`;
 
         const result = await this.prisma.$transaction(async (tx) => {
@@ -222,6 +225,7 @@ export class MerchantsService {
                 data: {
                     name: dto.name,
                     webhookUrl: dto.webhookUrl,
+                    apiKeyId: generatedApiKey.id,
                     apiKeyHash,
                     webhookSecret,
                 },
@@ -261,14 +265,38 @@ export class MerchantsService {
         });
     }
 
-    async findAllForAuth() {
+    private async generateApiKey() {
+        const id = crypto.randomBytes(16).toString('hex').slice(0, 32);
+        const secret = crypto.randomBytes(32).toString('hex');
+        return { id, raw: `mk_${id}_${secret}`, hash: await argon2.hash(secret) };
+    }
+
+    async findByApiKeyId(apiKeyId: string) {
+        return this.prisma.merchant.findUnique({
+            where: { apiKeyId },
+            select: { id: true, name: true, apiKeyId: true, apiKeyHash: true },
+        });
+    }
+
+    async findLegacyApiKeys() {
         return await this.prisma.merchant.findMany({
+            where: { apiKeyId: null },
             select: {
                 id: true,
                 name: true,
                 apiKeyHash: true,
             }
         })
+    }
+
+    async rotateApiKey(merchantId: string) {
+        const generatedApiKey = await this.generateApiKey();
+        await this.prisma.merchant.update({
+            where: { id: merchantId },
+            data: { apiKeyId: generatedApiKey.id, apiKeyHash: generatedApiKey.hash },
+            select: { id: true },
+        });
+        return { apiKey: generatedApiKey.raw };
     }
 
     async findWebhookConfig(merchantId: string) {

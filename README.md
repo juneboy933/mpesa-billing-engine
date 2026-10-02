@@ -30,7 +30,7 @@ flowchart LR
   API --> Cradle[Cradle SMS]
 ```
 
-1. A merchant registers and receives an API key once. The dashboard uses passwordless OTP sign-in and an HttpOnly session cookie.
+1. A merchant registers and receives an API key once. New keys include an indexed public ID, so each request looks up and verifies one key hash. Older keys remain supported temporarily; rotate them from Settings to move to indexed authentication. The dashboard uses passwordless OTP sign-in and an HttpOnly session cookie.
 2. The merchant completes PayBill setup with their own Daraja consumer key, consumer secret, shortcode, and passkey. The API encrypts credentials before storage.
 3. The merchant creates a weekly or monthly plan and a subscription. The subscription is associated with that merchant and plan.
 4. A BullMQ scheduler scans for subscriptions due to be charged every five minutes. Charge workers write the attempt before sending an STK request.
@@ -107,6 +107,7 @@ Apply committed migrations in deployment environments with `npx prisma migrate d
 | --- | --- |
 | `DATABASE_URL` | PostgreSQL connection string |
 | `REDIS_URL` | Redis connection used by BullMQ and token caching |
+| `FRONTEND_URL` | Exact browser origin allowed to use credentialed session cookies |
 | `DARAJA_CALLBACK_TOKEN` | Secret path token for the Daraja callback endpoint |
 | `MPESA_CALLBACK_URL` | Public callback base URL configured for STK requests |
 | `MPESA_TOKEN_URL`, `STK_PUSH_URL` | Daraja OAuth and STK endpoints |
@@ -126,6 +127,7 @@ All API routes are prefixed with `/api`. Protected routes accept either an `x-ap
 | --- | --- |
 | `POST /merchants` or `POST /merchants/onboarding/start` | Register a merchant; save the returned API key |
 | `POST /auth/otp/request`, `POST /auth/otp/verify`, `POST /auth/logout` | Dashboard passwordless sign-in |
+| `POST /merchants/me/rotate-api-key` | Immediately invalidate the current key and return one replacement |
 | `GET /merchants/dashboard`, `GET /merchants/analytics` | Dashboard counts and analytics |
 | `/merchants/me/onboarding`, `/merchants/me/mpesa-setup` | Resume onboarding and set up Daraja credentials |
 | `/plans` | Create, list, update, and delete merchant plans |

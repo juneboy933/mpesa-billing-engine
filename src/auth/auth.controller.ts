@@ -8,6 +8,7 @@ import { VerifyOtpDto } from './dto/verify-otp.dto';
 
 export const SESSION_COOKIE = 'niaflow_session';
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000;
+const sessionSameSite = () => process.env.NODE_ENV === 'production' ? 'none' : 'lax';
 
 @ApiTags('auth')
 @Controller('auth')
@@ -31,7 +32,7 @@ export class AuthController {
         response.cookie(SESSION_COOKIE, session.sessionId, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
-            sameSite: 'lax',
+            sameSite: sessionSameSite(),
             maxAge: SESSION_MAX_AGE,
             path: '/',
         });
@@ -47,7 +48,7 @@ export class AuthController {
         if (sessionId) {
             await this.authService.logout(sessionId);
         }
-        response.clearCookie(SESSION_COOKIE, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: 'lax', path: '/' });
+        response.clearCookie(SESSION_COOKIE, { httpOnly: true, secure: process.env.NODE_ENV === 'production', sameSite: sessionSameSite(), path: '/' });
         return { message: 'Logged out' };
     }
 }

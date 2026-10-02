@@ -105,4 +105,12 @@ export class MerchantsController {
     async rotateWebhookSecret(@Req() req: AuthenticatedUser) {
         return this.merchantsService.rotateWebhookSecret(req.merchant.id);
     }
+
+    @Post('me/rotate-api-key')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Rotate the merchant API key and return the new key once' })
+    @ApiResponse({ status: 201, description: 'New API key returned; update integrations immediately' })
+    async rotateApiKey(@Req() req: AuthenticatedUser) {
+        return this.merchantsService.rotateApiKey(req.merchant.id);
+    }
 }

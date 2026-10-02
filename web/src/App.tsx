@@ -1,7 +1,9 @@
-import { useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { ArrowRight, Check, CreditCard, LayoutDashboard, MessageSquareText, ShieldCheck } from 'lucide-react'
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { api } from './api'
+import { ApiError } from './api'
+import { safeReturnTo } from './authNavigation'
 import { onboardingStepFor } from './onboardingFlow'
 import { AppShell } from './layouts/AppShell'
 import { AnalyticsPage } from './pages/AnalyticsPage'
@@ -12,6 +14,7 @@ import { RecoveryPage } from './pages/RecoveryPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { SubscriptionsPage } from './pages/SubscriptionsPage'
 import './App.css'
+import { ErrorState, LoadingState } from './components/States'
 
 function App() {
   return (
@@ -33,13 +36,44 @@ function App() {
 }
 
 function Protected({ children }: { children: ReactNode }) {
+  const location = useLocation()
+  const navigate = useNavigate()
+  const [authorized, setAuthorized] = useState(false)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    let current = true
+    setAuthorized(false)
+    setError('')
+    void api.getOnboardingStatus().then(status => {
+      if (!current) return
+      const step = onboardingStepFor(status)
+      const returnTo = safeReturnTo(`${location.pathname}${location.search}`)
+      if (step !== null) {
+        navigate('/onboarding', { replace: true, state: { step, returnTo } })
+      } else {
+        setAuthorized(true)
+      }
+    }).catch(requestError => {
+      if (!current) return
+      if (requestError instanceof ApiError && requestError.status === 401) {
+        navigate('/signin', { replace: true, state: { returnTo: safeReturnTo(`${location.pathname}${location.search}`) } })
+      } else {
+        setError(requestError instanceof Error ? requestError.message : 'Unable to check your session')
+      }
+    })
+    return () => { current = false }
+  }, [location.pathname, location.search, navigate])
+
+  if (error) return <ErrorState message={error} />
+  if (!authorized) return <LoadingState />
   return <AppShell>{children}</AppShell>
 }
 
 function OnboardingPage() {
   const navigate = useNavigate()
   const location = useLocation()
-  const resumed = location.state as { step?: number; phone?: string } | null
+  const resumed = location.state as { step?: number; phone?: string; returnTo?: string | null } | null
   const [step, setStep] = useState(resumed?.step ?? 0)
   const [business, setBusiness] = useState('')
   const [phone, setPhone] = useState(resumed?.phone ?? '')
@@ -86,7 +120,7 @@ function OnboardingPage() {
 
   const finish = () => run(async () => {
     await api.createFirstPlan(plan.name.trim(), Number(plan.amount), plan.interval)
-    navigate('/dashboard')
+    navigate(safeReturnTo(resumed?.returnTo) ?? '/dashboard')
   })
 
   const fields = [
@@ -159,6 +193,7 @@ function OnboardingPage() {
 
 function SignInPage() {
   const navigate = useNavigate()
+  const location = useLocation()
   const [phone, setPhone] = useState('')
   const [code, setCode] = useState('')
   const [sent, setSent] = useState(false)
@@ -185,8 +220,9 @@ function SignInPage() {
       await api.verifyOtp(phone.trim(), code)
       const status = await api.getOnboardingStatus()
       const step = onboardingStepFor(status)
-      if (step === null) navigate('/dashboard')
-      else navigate('/onboarding', { state: { step, phone: phone.trim() } })
+      const returnTo = safeReturnTo((location.state as { returnTo?: unknown } | null)?.returnTo)
+      if (step === null) navigate(returnTo ?? '/dashboard', { replace: true })
+      else navigate('/onboarding', { replace: true, state: { step, phone: phone.trim(), returnTo } })
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : 'Unable to verify code')
     } finally {

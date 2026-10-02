@@ -51,6 +51,7 @@ model Merchant {
   id String @id @default(uuid())
   name String
   phoneNumber String? @unique
+  apiKeyId String? @unique
   apiKeyHash String @unique
   webhookUrl String?
   webhookSecret String?

@@ -85,7 +85,7 @@ describe('MerchantsService', () => {
 
     // First randomBytes() call in a test returns HEX_A, second returns HEX_B, etc.
     let call = 0;
-    const sequence = [HEX_A, HEX_B];
+    const sequence = [HEX_A, HEX_B, 'c'.repeat(64)];
     (mockedCrypto.randomBytes as unknown as jest.Mock).mockImplementation(() => {
       const hex = sequence[call] ?? `${call}`.repeat(64);
       call += 1;
@@ -241,8 +241,8 @@ describe('MerchantsService', () => {
 
       expect(result.merchant).toBe(createdMerchant);
       expect(result.plan).toBe(createdPlan);
-      expect(result.apiKey).toBe(`mk_${HEX_A}`);
-      expect(result.webhookSecret).toBe(`whsec_${HEX_B}`);
+      expect(result.apiKey).toBe(`mk_${HEX_A.slice(0, 32)}_${HEX_B}`);
+      expect(result.webhookSecret).toBe(`whsec_${'c'.repeat(64)}`);
     });
   });
 
@@ -259,8 +259,8 @@ describe('MerchantsService', () => {
       const result = await service.create(dto);
 
       expect(result.merchant).toBe(createdMerchant);
-      expect(result.apiKey).toBe(`mk_${HEX_A}`);
-      expect(result.webhookSecret).toBe(`whsec_${HEX_B}`);
+      expect(result.apiKey).toBe(`mk_${HEX_A.slice(0, 32)}_${HEX_B}`);
+      expect(result.webhookSecret).toBe(`whsec_${'c'.repeat(64)}`);
     });
 
     it('hashes the raw api key with argon2 before persisting', async () => {
@@ -268,7 +268,7 @@ describe('MerchantsService', () => {
 
       await service.create(dto);
 
-      expect(mockedArgon2.hash).toHaveBeenCalledWith(`mk_${HEX_A}`);
+      expect(mockedArgon2.hash).toHaveBeenCalledWith(HEX_B);
     });
 
     it('persists only the hash, never the raw api key', async () => {
@@ -278,7 +278,7 @@ describe('MerchantsService', () => {
 
       const { data } = prisma.merchant.create.mock.calls[0][0];
       expect(data.apiKeyHash).toBe('hashed-api-key');
-      expect(Object.values(data)).not.toContain(`mk_${HEX_A}`);
+      expect(Object.values(data)).not.toContain(`mk_${HEX_A.slice(0, 32)}_${HEX_B}`);
     });
 
     it('calls prisma with the dto fields, hash, secret, and the public select', async () => {
@@ -290,8 +290,9 @@ describe('MerchantsService', () => {
         data: {
           name: dto.name,
           webhookUrl: dto.webhookUrl,
+          apiKeyId: HEX_A.slice(0, 32),
           apiKeyHash: 'hashed-api-key',
-          webhookSecret: `whsec_${HEX_B}`,
+          webhookSecret: `whsec_${'c'.repeat(64)}`,
         },
         select: { id: true, name: true, webhookUrl: true, createdAt: true },
       });
@@ -384,14 +385,28 @@ describe('MerchantsService', () => {
     });
   });
 
-  describe('findAllForAuth', () => {
-    it('selects only id, name, and apiKeyHash', async () => {
+  describe('findByApiKeyId and legacy authentication', () => {
+    it('looks up one API key by its public ID', async () => {
+      const merchant = { id: 'm1', name: 'Acme', apiKeyId: 'a'.repeat(32), apiKeyHash: 'h1' };
+      prisma.merchant.findUnique.mockResolvedValue(merchant);
+
+      const result = await service.findByApiKeyId('a'.repeat(32));
+
+      expect(prisma.merchant.findUnique).toHaveBeenCalledWith({
+        where: { apiKeyId: 'a'.repeat(32) },
+        select: { id: true, name: true, apiKeyId: true, apiKeyHash: true },
+      });
+      expect(result).toBe(merchant);
+    });
+
+    it('limits compatibility lookup to merchants that have not rotated their legacy key', async () => {
       const merchants = [{ id: 'm1', name: 'Acme', apiKeyHash: 'h1' }];
       prisma.merchant.findMany.mockResolvedValue(merchants);
 
-      const result = await service.findAllForAuth();
+      const result = await service.findLegacyApiKeys();
 
       expect(prisma.merchant.findMany).toHaveBeenCalledWith({
+        where: { apiKeyId: null },
         select: { id: true, name: true, apiKeyHash: true },
       });
       expect(result).toBe(merchants);
@@ -400,9 +415,24 @@ describe('MerchantsService', () => {
     it('returns an empty array when there are no merchants', async () => {
       prisma.merchant.findMany.mockResolvedValue([]);
 
-      const result = await service.findAllForAuth();
+      const result = await service.findLegacyApiKeys();
 
       expect(result).toEqual([]);
+    });
+  });
+
+  describe('rotateApiKey', () => {
+    it('replaces the key ID and hash and returns the raw replacement once', async () => {
+      prisma.merchant.update.mockResolvedValue({ id: 'm1' });
+
+      const result = await service.rotateApiKey('m1');
+
+      expect(result.apiKey).toMatch(/^mk_[a-f0-9]{32}_[a-f0-9]{64}$/);
+      expect(prisma.merchant.update).toHaveBeenCalledWith({
+        where: { id: 'm1' },
+        data: { apiKeyId: expect.any(String), apiKeyHash: 'hashed-api-key' },
+        select: { id: true },
+      });
     });
   });
 

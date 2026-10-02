@@ -18,40 +18,56 @@ describe('ApiKeyGuard', () => {
     };
   };
 
-  it('accepts a valid key and attaches the matched merchant to the request', async () => {
-    const key = 'valid-key';
-    const merchant = { id: 'merchant_1', apiKeyHash: await argon2.hash(key) };
-    const merchantsService = { findAllForAuth: jest.fn().mockResolvedValue([merchant]) };
+  it('uses the public key ID to load one hash and attaches only public merchant fields', async () => {
+    const secret = 'a'.repeat(64);
+    const key = `mk_${'b'.repeat(32)}_${secret}`;
+    const merchant = { id: 'merchant_1', name: 'Acme', apiKeyId: 'b'.repeat(32), apiKeyHash: await argon2.hash(secret) };
+    const merchantsService = { findByApiKeyId: jest.fn().mockResolvedValue(merchant), findLegacyApiKeys: jest.fn() };
     const guard = new ApiKeyGuard(merchantsService as any, new Reflector());
     const context = buildContext(key) as any;
 
     await expect(guard.canActivate(context)).resolves.toBe(true);
-    expect(context.switchToHttp().getRequest().merchant).toEqual(merchant);
+    expect(merchantsService.findByApiKeyId).toHaveBeenCalledWith('b'.repeat(32));
+    expect(merchantsService.findLegacyApiKeys).not.toHaveBeenCalled();
+    expect(context.switchToHttp().getRequest().merchant).toEqual({ id: merchant.id, name: merchant.name });
   });
 
   it('throws UnauthorizedException when the key is missing', async () => {
-    const merchantsService = { findAllForAuth: jest.fn() };
+    const merchantsService = { findByApiKeyId: jest.fn(), findLegacyApiKeys: jest.fn() };
     const guard = new ApiKeyGuard(merchantsService as any, new Reflector());
 
     await expect(guard.canActivate(buildContext() as any)).rejects.toThrow(UnauthorizedException);
-    expect(merchantsService.findAllForAuth).not.toHaveBeenCalled();
+    expect(merchantsService.findByApiKeyId).not.toHaveBeenCalled();
+    expect(merchantsService.findLegacyApiKeys).not.toHaveBeenCalled();
   });
 
   it('throws UnauthorizedException when the key is invalid', async () => {
-    const merchantsService = {
-      findAllForAuth: jest.fn().mockResolvedValue([{ id: 'merchant_1', apiKeyHash: await argon2.hash('real-key') }]),
-    };
+    const merchantsService = { findByApiKeyId: jest.fn().mockResolvedValue(null), findLegacyApiKeys: jest.fn() };
     const guard = new ApiKeyGuard(merchantsService as any, new Reflector());
 
-    await expect(guard.canActivate(buildContext('wrong-key') as any)).rejects.toThrow(UnauthorizedException);
+    await expect(guard.canActivate(buildContext(`mk_${'b'.repeat(32)}_${'c'.repeat(64)}`) as any)).rejects.toThrow(UnauthorizedException);
+    expect(merchantsService.findLegacyApiKeys).not.toHaveBeenCalled();
+  });
+
+  it('supports legacy keys during the migration window', async () => {
+    const key = `mk_${'a'.repeat(64)}`;
+    const merchant = { id: 'merchant_1', name: 'Acme', apiKeyHash: await argon2.hash(key) };
+    const merchantsService = { findByApiKeyId: jest.fn(), findLegacyApiKeys: jest.fn().mockResolvedValue([merchant]) };
+    const guard = new ApiKeyGuard(merchantsService as any, new Reflector());
+    const context = buildContext(key) as any;
+
+    await expect(guard.canActivate(context)).resolves.toBe(true);
+    expect(merchantsService.findLegacyApiKeys).toHaveBeenCalledTimes(1);
+    expect(context.switchToHttp().getRequest().merchant).toEqual({ id: merchant.id, name: merchant.name });
   });
 
   it('bypasses validation for routes marked public', async () => {
-    const merchantsService = { findAllForAuth: jest.fn() };
+    const merchantsService = { findByApiKeyId: jest.fn(), findLegacyApiKeys: jest.fn() };
     const reflector = { getAllAndOverride: jest.fn().mockReturnValue(true) };
     const guard = new ApiKeyGuard(merchantsService as any, reflector as any);
 
     await expect(guard.canActivate(buildContext('ignored') as any)).resolves.toBe(true);
-    expect(merchantsService.findAllForAuth).not.toHaveBeenCalled();
+    expect(merchantsService.findByApiKeyId).not.toHaveBeenCalled();
+    expect(merchantsService.findLegacyApiKeys).not.toHaveBeenCalled();
   });
 });

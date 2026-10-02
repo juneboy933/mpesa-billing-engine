@@ -41,23 +41,30 @@ export class ApiKeyGuard implements CanActivate {
       throw new UnauthorizedException('API key is missing from the request headers');
     }
 
-    const merchants = await this.merchantsService.findAllForAuth();
-    
-    let matchedMerchant = null;
-
-    for (const merchant of merchants) {
-      const isMatch = await argon2.verify(merchant.apiKeyHash, apiKey);
-      if (isMatch) {
-        matchedMerchant = merchant;
-        break;
+    const keyedApiKey = /^mk_([a-f0-9]{32})_([a-f0-9]{64})$/.exec(apiKey);
+    if (keyedApiKey) {
+      const [, apiKeyId, secret] = keyedApiKey;
+      const merchant = await this.merchantsService.findByApiKeyId(apiKeyId);
+      if (merchant && await argon2.verify(merchant.apiKeyHash, secret)) {
+        req.merchant = { id: merchant.id, name: merchant.name };
+        return true;
       }
-    }
-
-    if (!matchedMerchant) {
       throw new UnauthorizedException('Invalid API key');
     }
 
-    req.merchant = matchedMerchant;
-    return true;
+    // Compatibility window for keys issued before IDs were introduced. Rotating
+    // a legacy key moves that merchant to the indexed lookup path.
+    if (!/^mk_[a-f0-9]{64}$/.test(apiKey)) {
+      throw new UnauthorizedException('Invalid API key');
+    }
+
+    const legacyMerchants = await this.merchantsService.findLegacyApiKeys();
+    for (const merchant of legacyMerchants) {
+      if (await argon2.verify(merchant.apiKeyHash, apiKey)) {
+        req.merchant = { id: merchant.id, name: merchant.name };
+        return true;
+      }
+    }
+    throw new UnauthorizedException('Invalid API key');
   }
 }
