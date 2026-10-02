@@ -35,9 +35,10 @@ export type OnboardingStatus = {
 }
 
 export type Dashboard = { merchantId: string; metrics: { plansCount: number; subscriptionsCount: number; activeSubscriptionsCount: number; failedPaymentsCount: number }; recentSubscriptions: Subscription[] }
-export type Analytics = { totalSubscriptions: number; activeSubscriptions: number; monthlyRecurringRevenue: number; totalRevenue: number; failedPayments: number; retryingSubscriptions: number; revenueTrend: { date: string; revenue: number }[] }
+export type Analytics = { totalSubscriptions: number; activeSubscriptions: number; monthlyRecurringRevenue: number; totalRevenue: number; collectedThisPeriod: number; failedPayments: number; retryingSubscriptions: number; revenueTrend: { date: string; revenue: number }[] }
 export type Plan = { id: string; name: string; amount: number | string; interval: string; createdAt: string; subscriptionCount?: number }
 export type Subscription = { id: string; customerPhone: string; status: string; nextBillingDate: string; createdAt: string; plan?: { id?: string; name: string; amount: number | string } }
+export type SubscriptionManagement = { totalSubscriptions: number; activeSubscriptions: number; page: number; pageSize: number; totalPages: number; subscriptions: Subscription[] }
 export type Receipt = { id: string; status: string; amount: number; createdAt: string; resolvedAt: string | null; receiptNumber: string }
 export type SubscriptionReceipts = { subscriptionId: string; customerPhone: string; currentPlan: string; totalPayments: number; receipts: Receipt[] }
 
@@ -58,8 +59,8 @@ export const api = {
   getPlans: () => request<Plan[]>('/plans'),
   getPlanManagement: () => request<{ totalPlans: number; totalActiveSubscriptions: number; plans: Plan[] }>('/plans/management'),
   createPlan: (name: string, amount: number, interval: 'WEEKLY' | 'MONTHLY') => request<Plan>('/plans', { method: 'POST', body: { name, amount, interval } }),
-  getSubscriptions: () => request<{ subscriptions: Subscription[] }>('/subscriptions/management').then(data => data.subscriptions),
-  getSubscriptionManagement: () => request<{ totalSubscriptions: number; activeSubscriptions: number; subscriptions: Subscription[] }>('/subscriptions/management'),
+  getSubscriptions: (page = 1) => request<SubscriptionManagement>(`/subscriptions/management?page=${page}`).then(data => data.subscriptions),
+  getSubscriptionManagement: (page = 1) => request<SubscriptionManagement>(`/subscriptions/management?page=${page}`),
   createSubscription: (planId: string, customerPhone: string) => request('/subscriptions', { method: 'POST', body: { planId, customerPhone } }),
   getRetryQueue: () => request<{ total: number; retrying: number; pastDue: number; subscriptions: Subscription[] }>('/subscriptions/retry-queue'),
   getReceipts: (subscriptionId: string) => request<SubscriptionReceipts>(`/subscriptions/${subscriptionId}/receipts`),

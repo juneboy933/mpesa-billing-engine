@@ -508,6 +508,7 @@ describe('MerchantsService', () => {
 
   describe('getAnalyticsSummary', () => {
     it('returns merchant revenue, active subscriptions, and recovery metrics', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-09-20T00:00:00.000Z'));
       prisma.subscription.findMany.mockResolvedValue([
         { id: 'sub_1', status: 'ACTIVE', plan: { amount: 1200 } },
         { id: 'sub_2', status: 'RETRYING', plan: { amount: 800 } },
@@ -526,11 +527,13 @@ describe('MerchantsService', () => {
         activeSubscriptions: 1,
         monthlyRecurringRevenue: 1200,
         totalRevenue: 3200,
+        collectedThisPeriod: 3200,
         failedPayments: 1,
         retryingSubscriptions: 2,
       });
       expect(result.revenueTrend).toHaveLength(7);
       expect(result.revenueTrend[0].date).toBeDefined();
+      jest.useRealTimers();
     });
   });
 });

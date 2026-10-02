@@ -44,13 +44,6 @@ export class SubscriptionsService {
         };
     }
 
-    async getAllSubscriptions(merchantId: string) {
-        return await this.prisma.subscription.findMany({
-            where: { merchantId },
-            select: subscriptionSelect,
-        });
-    }
-
     async getRetryQueue(merchantId: string) {
         const subscriptions = await this.prisma.subscription.findMany({
             where: {
@@ -99,31 +92,43 @@ export class SubscriptionsService {
         return await this.paymentsService.triggerSTkPush(subscriptionId);
     }
 
-    async getManagementOverview(merchantId: string) {
-        const subscriptions = await this.prisma.subscription.findMany({
-            where: { merchantId },
-            orderBy: { createdAt: 'desc' },
-            select: {
-                id: true,
-                customerPhone: true,
-                status: true,
-                nextBillingDate: true,
-                createdAt: true,
-                plan: {
-                    select: {
-                        id: true,
-                        name: true,
-                        amount: true,
+    async getManagementOverview(merchantId: string, requestedPage = 1) {
+        const pageSize = 20;
+        const requested = Number.isFinite(requestedPage) ? Math.max(1, Math.floor(requestedPage)) : 1;
+        const where = { merchantId };
+        const totalSubscriptions = await this.prisma.subscription.count({ where });
+        const totalPages = Math.ceil(totalSubscriptions / pageSize);
+        const page = Math.min(requested, totalPages || 1);
+        const [activeSubscriptions, subscriptions] = await Promise.all([
+            this.prisma.subscription.count({ where: { ...where, status: SubscriptionStatus.ACTIVE } }),
+            this.prisma.subscription.findMany({
+                where,
+                orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+                skip: (page - 1) * pageSize,
+                take: pageSize,
+                select: {
+                    id: true,
+                    customerPhone: true,
+                    status: true,
+                    nextBillingDate: true,
+                    createdAt: true,
+                    plan: {
+                        select: {
+                            id: true,
+                            name: true,
+                            amount: true,
+                        },
                     },
                 },
-            },
-        });
+            }),
+        ]);
 
         return {
-            totalSubscriptions: subscriptions.length,
-            activeSubscriptions: subscriptions.filter(
-                (subscription) => subscription.status === SubscriptionStatus.ACTIVE,
-            ).length,
+            totalSubscriptions,
+            activeSubscriptions,
+            page,
+            pageSize,
+            totalPages,
             subscriptions,
         };
     }

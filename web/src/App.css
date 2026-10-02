@@ -125,3 +125,5 @@ h1, h2, h3, p { margin-top: 0; }.hero-copy h1 { max-width: 620px; margin: 21px 0
   .row-actions { gap: 4px; }
   .row-actions > strong { display: none; }
 }
+.pagination-controls { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 0 2px; color: #78867d; font-size: 11px; }
+.pagination-controls button:disabled { opacity: .4; cursor: default; }

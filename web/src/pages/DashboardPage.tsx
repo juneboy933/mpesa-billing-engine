@@ -51,7 +51,7 @@ export function DashboardPage() {
       <section className="metric-grid">
         <Metric
           label="Collected this period"
-          value={`KES ${analytics.totalRevenue.toLocaleString()}`}
+          value={`KES ${analytics.collectedThisPeriod.toLocaleString()}`}
           tone="positive"
         />
         <Metric

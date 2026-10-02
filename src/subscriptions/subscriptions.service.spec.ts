@@ -11,6 +11,7 @@ describe('SubscriptionsService', () => {
   let prisma: {
     subscription: {
       create: jest.Mock;
+      count: jest.Mock;
       findMany: jest.Mock;
       findFirst: jest.Mock;
       update: jest.Mock;
@@ -24,6 +25,7 @@ describe('SubscriptionsService', () => {
     prisma = {
       subscription: {
         create: jest.fn(),
+        count: jest.fn(),
         findMany: jest.fn(),
         findFirst: jest.fn(),
         update: jest.fn(),
@@ -85,25 +87,6 @@ describe('SubscriptionsService', () => {
     });
   });
 
-  it('returns all subscriptions for a merchant', async () => {
-    const subscriptions = [{ id: 'sub_1', customerPhone: '254712345678', nextBillingDate: new Date(), status: 'ACTIVE', createdAt: new Date() }];
-    prisma.subscription.findMany.mockResolvedValue(subscriptions);
-
-    const result = await service.getAllSubscriptions('merchant_1');
-
-    expect(prisma.subscription.findMany).toHaveBeenCalledWith({
-      where: { merchantId: 'merchant_1' },
-      select: {
-        id: true,
-        customerPhone: true,
-        nextBillingDate: true,
-        status: true,
-        createdAt: true,
-      },
-    });
-    expect(result).toBe(subscriptions);
-  });
-
   it('returns a merchant subscription management overview with plan details', async () => {
     const subscriptions = [
       {
@@ -116,17 +99,29 @@ describe('SubscriptionsService', () => {
       },
     ];
     prisma.subscription.findMany.mockResolvedValue(subscriptions);
+    prisma.subscription.count.mockResolvedValueOnce(1).mockResolvedValueOnce(1);
 
     const result = await service.getManagementOverview('merchant_1');
 
     expect(result.totalSubscriptions).toBe(1);
     expect(result.activeSubscriptions).toBe(1);
+    expect(result).toMatchObject({ page: 1, pageSize: 20, totalPages: 1 });
     expect(result.subscriptions[0]).toMatchObject({
       id: 'sub_1',
       customerPhone: '254712345678',
       status: 'ACTIVE',
       plan: { name: 'Gold', amount: 1200 },
     });
+  });
+
+  it('uses 20-row pages and clamps a page beyond the final result page', async () => {
+    prisma.subscription.count.mockResolvedValueOnce(25).mockResolvedValueOnce(12);
+    prisma.subscription.findMany.mockResolvedValue([]);
+
+    const result = await service.getManagementOverview('merchant_1', 99);
+
+    expect(result).toMatchObject({ totalSubscriptions: 25, activeSubscriptions: 12, page: 2, pageSize: 20, totalPages: 2 });
+    expect(prisma.subscription.findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 20, take: 20 }));
   });
 
   it('throws when the merchant subscription cannot be found', async () => {

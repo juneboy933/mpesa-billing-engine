@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Patch, Post, Req } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, Req } from '@nestjs/common';
 import { SubscriptionsService } from './subscriptions.service';
 import type { Request } from 'express';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
@@ -26,18 +26,20 @@ export class SubscriptionsController {
 
     @Get()
     @ApiSecurity('api-key')
-    @ApiOperation({ summary: 'Get all subscriptions for the authenticated merchant' })
-    @ApiResponse({ status: 200, description: 'Subscriptions retrieved successfully' })
-    async getAllSubscriptions(@Req() req: AuthenticatedRequest) {
-        return await this.subscriptionsService.getAllSubscriptions(req.merchant.id);
+    @ApiOperation({ summary: 'Get a page of up to 20 subscriptions for the authenticated merchant' })
+    @ApiResponse({ status: 200, description: 'A paginated list with total counts and page metadata' })
+    async getAllSubscriptions(@Req() req: AuthenticatedRequest, @Query('page') page?: string) {
+        const requestedPage = page === undefined ? 1 : Number(page);
+        return await this.subscriptionsService.getManagementOverview(req.merchant.id, requestedPage);
     }
 
     @Get('management')
     @ApiSecurity('api-key')
     @ApiOperation({ summary: 'Get the merchant subscription management overview with plan details' })
     @ApiResponse({ status: 200, description: 'Subscription management overview retrieved successfully' })
-    async getManagementOverview(@Req() req: AuthenticatedRequest) {
-        return await this.subscriptionsService.getManagementOverview(req.merchant.id);
+    async getManagementOverview(@Req() req: AuthenticatedRequest, @Query('page') page?: string) {
+        const requestedPage = page === undefined ? 1 : Number(page);
+        return await this.subscriptionsService.getManagementOverview(req.merchant.id, requestedPage);
     }
 
     @Get(':subscriptionId/receipts')

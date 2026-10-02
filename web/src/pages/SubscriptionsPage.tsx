@@ -6,6 +6,9 @@ import { EmptyState, ErrorState, LoadingState } from '../components/States'
 
 export function SubscriptionsPage() {
   const [subscriptions, setSubscriptions] = useState<Subscription[]>([])
+  const [page, setPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
+  const [totalSubscriptions, setTotalSubscriptions] = useState(0)
   const [plans, setPlans] = useState<Plan[]>([])
   const [phone, setPhone] = useState('')
   const [planId, setPlanId] = useState('')
@@ -17,11 +20,14 @@ export function SubscriptionsPage() {
   const [receiptError, setReceiptError] = useState('')
   const [loadingReceipts, setLoadingReceipts] = useState(false)
 
-  const load = async () => {
+  const load = async (requestedPage = page) => {
     setError('')
     try {
-      const [nextSubscriptions, nextPlans] = await Promise.all([api.getSubscriptions(), api.getPlans()])
-      setSubscriptions(nextSubscriptions)
+      const [management, nextPlans] = await Promise.all([api.getSubscriptionManagement(requestedPage), api.getPlans()])
+      setSubscriptions(management.subscriptions)
+      setPage(management.page)
+      setTotalPages(management.totalPages)
+      setTotalSubscriptions(management.totalSubscriptions)
       setPlans(nextPlans)
       if (!planId && nextPlans[0]) setPlanId(nextPlans[0].id)
     } catch (loadError) {
@@ -40,7 +46,7 @@ export function SubscriptionsPage() {
     try {
       await api.createSubscription(planId, phone)
       setPhone('')
-      await load()
+      await load(1)
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : 'Unable to create subscription')
     } finally {
@@ -86,8 +92,9 @@ export function SubscriptionsPage() {
     {error && <ErrorState message={error} />}
     <div className="content-grid">
       <section className="data-panel">
-        <div className="panel-title"><div><div className="eyebrow">Member list</div><h2>{subscriptions.length} subscriptions</h2></div></div>
-        {subscriptions.length ? <div className="list-rows">
+        <div className="panel-title"><div><div className="eyebrow">Member list · Page {page} of {totalPages}</div><h2>{totalSubscriptions} subscriptions</h2></div></div>
+        {totalSubscriptions ? <>
+        <div className="list-rows">
           {subscriptions.map(subscription => <div className="subscription-entry" key={subscription.id}>
             <div className="list-row">
               <span className={`status-dot ${subscription.status.toLowerCase()}`} />
@@ -106,7 +113,13 @@ export function SubscriptionsPage() {
               </> : <EmptyState title="No receipts yet" copy="Payment receipts will appear here after a collection attempt." />}
             </div>}
           </div>)}
-        </div> : <EmptyState title="No subscriptions yet" copy="Add a member to start a recurring collection." />}
+        </div>
+        <div className="pagination-controls">
+          <button className="quiet-link" disabled={page <= 1} onClick={() => void load(page - 1)}>Previous</button>
+          <span>Showing {subscriptions.length ? (page - 1) * 20 + 1 : 0}–{(page - 1) * 20 + subscriptions.length} of {totalSubscriptions}</span>
+          <button className="quiet-link" disabled={page >= totalPages} onClick={() => void load(page + 1)}>Next</button>
+        </div>
+        </> : <EmptyState title="No subscriptions yet" copy="Add a member to start a recurring collection." />}
       </section>
 
       <form className="data-panel form-panel" onSubmit={create}>

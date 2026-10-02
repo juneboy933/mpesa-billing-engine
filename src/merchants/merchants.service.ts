@@ -299,6 +299,7 @@ export class MerchantsService {
     }
 
     async getAnalyticsSummary(merchantId: string) {
+        const monthRange = this.getNairobiCalendarMonthRange();
         const [subscriptions, paymentAttempts] = await Promise.all([
             this.prisma.subscription.findMany({
                 where: { merchantId },
@@ -339,6 +340,9 @@ export class MerchantsService {
         const successfulPayments = paymentAttempts.filter(
             (attempt) => attempt.status === PaymentAttemptStatus.SUCCEEDED,
         );
+        const collectedThisPeriod = successfulPayments
+            .filter((attempt) => attempt.createdAt >= monthRange.start && attempt.createdAt < monthRange.end)
+            .reduce((sum, attempt) => sum + Number(attempt.amount), 0);
         const totalRevenue = successfulPayments.reduce(
             (sum, attempt) => sum + Number(attempt.amount),
             0,
@@ -357,9 +361,25 @@ export class MerchantsService {
             activeSubscriptions,
             monthlyRecurringRevenue,
             totalRevenue,
+            collectedThisPeriod,
             failedPayments,
             retryingSubscriptions,
             revenueTrend,
+        };
+    }
+
+    private getNairobiCalendarMonthRange(now = new Date()) {
+        const parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: 'Africa/Nairobi',
+            year: 'numeric',
+            month: 'numeric',
+        }).formatToParts(now);
+        const year = Number(parts.find((part) => part.type === 'year')?.value);
+        const month = Number(parts.find((part) => part.type === 'month')?.value);
+        const nairobiOffsetMs = 3 * 60 * 60 * 1000;
+        return {
+            start: new Date(Date.UTC(year, month - 1, 1) - nairobiOffsetMs),
+            end: new Date(Date.UTC(year, month, 1) - nairobiOffsetMs),
         };
     }
 
