@@ -5,6 +5,7 @@ import { WebhookDeliveryProcessor } from './webhook-delivery.processor';
 import { PrismaService } from '../prisma/prisma.service';
 import { MerchantsService } from '../merchants/merchants.service';
 import { WebhookDeliveryStatus } from '../generated/prisma/enums';
+import { WebhookDestinationPolicy } from './webhook-destination-policy';
 
 jest.mock('axios', () => ({
   __esModule: true,
@@ -39,6 +40,7 @@ describe('WebhookDeliveryProcessor', () => {
         WebhookDeliveryProcessor,
         { provide: PrismaService, useValue: prisma },
         { provide: MerchantsService, useValue: merchantsService },
+        { provide: WebhookDestinationPolicy, useValue: { resolve: jest.fn().mockResolvedValue({ url: new URL('https://example.com/webhook'), address: '93.184.216.34', family: 4 }) } },
       ],
     }).compile();
 
@@ -84,6 +86,9 @@ describe('WebhookDeliveryProcessor', () => {
           'X-Webhook-Signature': expectedSignature,
         }),
       }),
+    );
+    expect(axios.post).toHaveBeenCalledWith(
+      'https://example.com/webhook', payload, expect.objectContaining({ maxRedirects: 0, proxy: false, httpsAgent: expect.anything() }),
     );
     expect(prisma.webhookDelivery.update).toHaveBeenCalledWith(
       expect.objectContaining({

@@ -7,6 +7,6 @@ export class UpdateMerchantDto {
         example: 'https://api.example.com/webhooks/merchant',
     })
     @IsOptional()
-    @IsUrl()
+    @IsUrl({ protocols: ['https'], require_protocol: true })
     readonly webhookUrl?: string;
 }

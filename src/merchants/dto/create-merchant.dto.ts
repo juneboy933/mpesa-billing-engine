@@ -25,8 +25,7 @@ export class CreateMerchantDto {
         example: 'https://api.example.com/webhooks/merchant',
         required: false,
     })
-    @IsUrl()
+    @IsUrl({ protocols: ['https'], require_protocol: true })
     @IsOptional()
-    @IsString()
     webhookUrl?: string;
 }
