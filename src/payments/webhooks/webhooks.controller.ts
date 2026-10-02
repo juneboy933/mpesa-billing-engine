@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { PaymentsService } from '../payments.service';
 import { StkCallbackEnvelopeDto, type StkCallbackBody } from '../dto/callback.dto';
@@ -22,8 +22,8 @@ export class WebhooksController {
     })
     @ApiBody({ type: StkCallbackEnvelopeDto })
     @ApiResponse({ status: 200, description: 'Callback accepted and processed successfully' })
-    async handleCallback(@Param('token') token: string, @Body() payload: StkCallbackBody) {
+    async handleCallback(@Body() payload: StkCallbackBody) {
         await this.paymentsService.processCallback(payload);
-        return { ResultCode: 0, ResultDesc: 'Accepted', token };
+        return { ResultCode: 0, ResultDesc: 'Accepted' };
     }
 }
