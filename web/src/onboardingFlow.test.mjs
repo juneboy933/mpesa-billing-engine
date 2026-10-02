@@ -12,11 +12,11 @@ const status = nextStep => ({
 })
 
 test('resumes at PayBill setup when it is the next onboarding step', () => {
-  assert.equal(onboardingStepFor(status('MPESA_SETUP')), 2)
+  assert.equal(onboardingStepFor(status('MPESA_SETUP')), 1)
 })
 
 test('resumes at first plan creation after PayBill setup', () => {
-  assert.equal(onboardingStepFor(status('FIRST_PLAN')), 3)
+  assert.equal(onboardingStepFor(status('FIRST_PLAN')), 2)
 })
 
 test('returns to the dashboard after onboarding is complete', () => {

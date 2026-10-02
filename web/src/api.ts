@@ -53,12 +53,10 @@ export type Receipt = { id: string; status: string; amount: number; createdAt: s
 export type SubscriptionReceipts = { subscriptionId: string; customerPhone: string; currentPlan: string; totalPayments: number; receipts: Receipt[] }
 
 export const api = {
-  registerMerchant: (name: string, phoneNumber: string) =>
-    request<MerchantRegistration>('/merchants', { method: 'POST', body: { name, phoneNumber } }),
-  requestOtp: (phone: string) =>
-    request<{ message: string }>('/auth/otp/request', { method: 'POST', body: { phone } }),
-  verifyOtp: (phone: string, code: string) =>
-    request<{ merchantId: string; expiresIn: number }>('/auth/otp/verify', { method: 'POST', body: { phone, code } }),
+  registerMerchant: (name: string, phoneNumber: string, password: string, email?: string) =>
+    request<MerchantRegistration>('/merchants', { method: 'POST', body: { name, phoneNumber, password, ...(email ? { email } : {}) } }),
+  signIn: (phone: string, password: string) =>
+    request<{ merchantId: string; expiresIn: number }>('/auth/signin', { method: 'POST', body: { phone, password } }),
   getOnboardingStatus: () => request<OnboardingStatus>('/merchants/me/onboarding'),
   setupMpesa: (credentials: { consumerKey: string; consumerSecret: string; shortcode: string; passkey: string }) =>
     request('/merchants/me/mpesa-setup', { method: 'POST', body: credentials }),
@@ -78,5 +76,7 @@ export const api = {
   payNow: (id: string) => request(`/subscriptions/${id}/pay-now`, { method: 'POST' }),
   cancelSubscription: (id: string) => request(`/subscriptions/${id}/cancel`, { method: 'PATCH' }),
   logout: () => request<{ message: string }>('/auth/logout', { method: 'POST' }),
+  setPassword: (password: string, currentPassword?: string) =>
+    request<{ message: string }>('/auth/password', { method: 'PUT', body: { password, ...(currentPassword ? { currentPassword } : {}) } }),
   rotateApiKey: () => request<{ apiKey: string }>('/merchants/me/rotate-api-key', { method: 'POST' }),
 }

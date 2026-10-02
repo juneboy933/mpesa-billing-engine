@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUrl, Min } from 'class-validator';
+import { IsEmail, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUrl, MaxLength, Min, MinLength } from 'class-validator';
 
 export class OnboardMerchantDto {
     @ApiProperty({
@@ -10,6 +10,22 @@ export class OnboardMerchantDto {
     @IsString()
     @IsNotEmpty()
     name: string;
+
+    @ApiProperty({ example: '0712345678' })
+    @IsString()
+    @IsNotEmpty()
+    phoneNumber: string;
+
+    @ApiProperty({ minLength: 12, maxLength: 128, writeOnly: true })
+    @IsString()
+    @MinLength(12)
+    @MaxLength(128)
+    password: string;
+
+    @ApiProperty({ required: false })
+    @IsEmail()
+    @IsOptional()
+    email?: string;
 
     @ApiProperty({
         description: 'Optional webhook URL for merchant events',

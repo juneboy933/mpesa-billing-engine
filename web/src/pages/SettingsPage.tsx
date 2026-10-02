@@ -14,6 +14,10 @@ export function SettingsPage() {
   const [rotatedApiKey, setRotatedApiKey] = useState('');
   const [keyMessage, setKeyMessage] = useState('');
   const [rotatingKey, setRotatingKey] = useState(false);
+  const [password, setPassword] = useState('');
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [passwordMessage, setPasswordMessage] = useState('');
+  const [savingPassword, setSavingPassword] = useState(false);
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setSaving(true);
@@ -42,6 +46,21 @@ export function SettingsPage() {
       setKeyMessage(error instanceof Error ? error.message : 'Unable to rotate API key');
     } finally {
       setRotatingKey(false);
+    }
+  };
+  const updatePassword = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setSavingPassword(true);
+    setPasswordMessage('');
+    try {
+      await api.setPassword(password, currentPassword || undefined);
+      setPassword('');
+      setCurrentPassword('');
+      setPasswordMessage('Password saved. Use it the next time you sign in.');
+    } catch (error) {
+      setPasswordMessage(error instanceof Error ? error.message : 'Unable to update password');
+    } finally {
+      setSavingPassword(false);
     }
   };
   return (
@@ -91,6 +110,19 @@ export function SettingsPage() {
         <button className="primary-button" disabled={saving}>
           {saving ? 'Validating...' : 'Save payment setup'}
         </button>
+      </form>
+      <form className="data-panel form-panel settings-form" onSubmit={updatePassword}>
+        <div className="eyebrow">Account security</div>
+        <h2>Merchant password</h2>
+        <p className="muted">Use at least 12 characters. Existing accounts can set their first password while signed in. Forgotten passwords require support; optional email is not used for resets.</p>
+        <label htmlFor="current-password">Current password <span className="muted">(leave blank if setting one for the first time)</span>
+          <input id="current-password" type="password" autoComplete="current-password" value={currentPassword} onChange={event => setCurrentPassword(event.target.value)} />
+        </label>
+        <label htmlFor="new-password">New password
+          <input id="new-password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required value={password} onChange={event => setPassword(event.target.value)} />
+        </label>
+        {passwordMessage && <p className="form-message" role="status">{passwordMessage}</p>}
+        <button className="primary-button" disabled={savingPassword || password.length < 12}>{savingPassword ? 'Saving…' : 'Save password'}</button>
       </form>
       <section className="data-panel key-management-panel">
         <div className="eyebrow">Developer access</div>

@@ -150,7 +150,7 @@ describe('MerchantsService', () => {
       };
       prisma.merchant.create.mockResolvedValue(created.merchant);
 
-      const result = await service.startOnboarding({ name: 'Gym' });
+      const result = await service.startOnboarding({ name: 'Gym', phoneNumber: '0712345678', password: 'a-secure-test-password' });
 
       expect(result).toMatchObject({
         merchant: created.merchant,
@@ -225,6 +225,9 @@ describe('MerchantsService', () => {
     it('creates the merchant and the first billing plan in one onboarding flow', async () => {
       const dto = {
         name: 'Acme Ltd',
+        phoneNumber: '0712345678',
+        password: 'a-secure-test-password',
+        email: 'owner@example.com',
         webhookUrl: 'https://acme.example.com/webhooks',
         planName: 'Starter Monthly',
         planAmount: 500,
@@ -249,6 +252,9 @@ describe('MerchantsService', () => {
   describe('create', () => {
     const dto: CreateMerchantDto = {
       name: 'Acme Ltd',
+      phoneNumber: '0712345678',
+      password: 'a-secure-test-password',
+      email: 'owner@example.com',
       webhookUrl: 'https://acme.example.com/webhooks',
     };
 
@@ -289,6 +295,9 @@ describe('MerchantsService', () => {
       expect(prisma.merchant.create).toHaveBeenCalledWith({
         data: {
           name: dto.name,
+          phoneNumber: '254712345678',
+          email: dto.email,
+          passwordHash: 'hashed-api-key',
           webhookUrl: dto.webhookUrl,
           apiKeyId: HEX_A.slice(0, 32),
           apiKeyHash: 'hashed-api-key',

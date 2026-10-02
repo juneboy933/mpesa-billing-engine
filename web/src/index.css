@@ -8,6 +8,25 @@ a { color: inherit; }
 .auth-layout { max-width: 1000px; min-height: calc(100vh - 76px); margin: auto; padding: 90px 30px; display: grid; grid-template-columns: 1fr 1fr; gap: 70px; align-items: center; }
 .auth-copy h1 { margin: 17px 0; color: #25312b; font: 800 42px/1.05 'Syne', sans-serif; letter-spacing: -1.5px; }
 .auth-copy p { max-width: 370px; color: #748078; font-size: 14px; line-height: 1.75; }
+.signin-card { width: 100%; max-width: 460px; padding: 34px 38px 26px; border-radius: 14px; box-shadow: 0 22px 55px rgba(42,62,47,.08); }
+.signin-card-heading { display: flex; align-items: center; gap: 14px; }
+.signin-lock { display: grid; width: 46px; height: 46px; flex: none; place-items: center; color: var(--green); border: 1px solid #dce9d8; border-radius: 12px; background: #eef5e9; }
+.signin-card-heading .eyebrow { margin-bottom: 4px; }
+.signin-card-heading h2 { margin: 0; font: 800 27px/1.1 var(--display); letter-spacing: -.8px; }
+.signin-intro { margin: 20px 0 26px; }
+.auth-panel label { display: block; margin: 19px 0 8px; color: #4c5c51; font-size: 11px; font-weight: 800; }
+.auth-panel input { width: 100%; min-height: 47px; padding: 12px 14px; color: var(--ink); border: 1px solid #d7dfd5; border-radius: 7px; outline: 0; background: #fbfcf9; font-size: 13px; transition: border-color .15s, box-shadow .15s; }
+.auth-panel input:focus { border-color: var(--green); box-shadow: 0 0 0 3px #e1f0dd; }
+.password-field { position: relative; }
+.password-field input { padding-right: 48px; }
+.password-toggle { position: absolute; top: 50%; right: 7px; display: grid; width: 34px; height: 34px; transform: translateY(-50%); place-items: center; color: #7a877d; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
+.password-toggle:hover { color: var(--green); background: #edf5e9; }
+.signin-submit { display: flex; align-items: center; justify-content: center; gap: 9px; min-height: 48px; margin-top: 25px; border-radius: 7px; }
+.signin-help { display: flex; gap: 11px; margin-top: 22px; padding: 14px; color: #748078; border: 1px solid #e4eae1; border-radius: 8px; background: #f8faf5; }
+.signin-help svg { flex: none; margin-top: 1px; color: var(--green); }
+.signin-help p { margin: 0; font-size: 11px; line-height: 1.6; }
+.signin-help strong { color: var(--ink); }
+.signin-card .text-button { margin-top: 20px; }
 .auth-panel { width: 100%; }
 .form-error { margin: 14px 0 0; color: #bd5d4b; font-size: 11px; line-height: 1.5; }
-@media (max-width: 700px) { .auth-layout { grid-template-columns: 1fr; gap: 30px; padding: 55px 20px; } .auth-copy h1 { font-size: 34px; } }
+@media (max-width: 700px) { .auth-layout { grid-template-columns: 1fr; gap: 30px; padding: 55px 20px; } .auth-copy h1 { font-size: 34px; } .signin-card { max-width: none; padding: 27px 22px 22px; } }

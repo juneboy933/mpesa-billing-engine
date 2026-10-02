@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsOptional, IsString, IsUrl } from 'class-validator';
+import { IsEmail, IsNotEmpty, IsOptional, IsString, IsUrl, MaxLength, MinLength } from 'class-validator';
 
 export class CreateMerchantDto {
     @ApiProperty({
@@ -12,13 +12,23 @@ export class CreateMerchantDto {
     name: string;
 
     @ApiProperty({
-        description: 'Merchant phone number used for passwordless login',
+        description: 'Merchant phone number used for sign-in',
         example: '0712345678',
-        required: false,
     })
     @IsString()
+    @IsNotEmpty()
+    phoneNumber: string;
+
+    @ApiProperty({ description: 'Password used for merchant sign-in', minLength: 12, maxLength: 128, writeOnly: true })
+    @IsString()
+    @MinLength(12)
+    @MaxLength(128)
+    password: string;
+
+    @ApiProperty({ description: 'Optional contact email; password recovery is handled by support', required: false })
+    @IsEmail()
     @IsOptional()
-    phoneNumber?: string;
+    email?: string;
 
     @ApiProperty({
         description: 'Optional webhook URL where merchant events will be posted',

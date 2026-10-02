@@ -1,10 +1,10 @@
-import { Body, Controller, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Post, Put, Req, Res } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
 import { Public } from '../common/decorators/public.decorator';
 import { AuthService } from './auth.service';
-import { RequestOtpDto } from './dto/request-otp.dto';
-import { VerifyOtpDto } from './dto/verify-otp.dto';
+import { SignInDto } from './dto/sign-in.dto';
+import { SetPasswordDto } from './dto/set-password.dto';
 
 export const SESSION_COOKIE = 'niaflow_session';
 const SESSION_MAX_AGE = 24 * 60 * 60 * 1000;
@@ -16,19 +16,11 @@ export class AuthController {
     constructor(private readonly authService: AuthService) {}
 
     @Public()
-    @Post('otp/request')
-    @ApiOperation({ summary: 'Send a passwordless login code to a registered merchant phone' })
-    @ApiResponse({ status: 200, description: 'Generic response returned whether or not the phone is registered' })
-    async requestOtp(@Body() dto: RequestOtpDto) {
-        return await this.authService.requestOtp(dto.phone);
-    }
-
-    @Public()
-    @Post('otp/verify')
-    @ApiOperation({ summary: 'Verify an OTP and create a browser session' })
+    @Post('signin')
+    @ApiOperation({ summary: 'Sign in with merchant phone and password' })
     @ApiResponse({ status: 201, description: 'Session created and stored in an HttpOnly cookie' })
-    async verifyOtp(@Body() dto: VerifyOtpDto, @Res({ passthrough: true }) response: Response) {
-        const session = await this.authService.verifyOtp(dto.phone, dto.code);
+    async signIn(@Body() dto: SignInDto, @Res({ passthrough: true }) response: Response) {
+        const session = await this.authService.signIn(dto.phone, dto.password);
         response.cookie(SESSION_COOKIE, session.sessionId, {
             httpOnly: true,
             secure: process.env.NODE_ENV === 'production',
@@ -37,6 +29,12 @@ export class AuthController {
             path: '/',
         });
         return { merchantId: session.merchantId, expiresIn: session.expiresIn };
+    }
+
+    @Put('password')
+    @ApiOperation({ summary: 'Set a password for an authenticated merchant account' })
+    async setPassword(@Req() request: Request & { merchant?: { id: string } }, @Body() dto: SetPasswordDto) {
+        return this.authService.setPassword(request.merchant!.id, dto.password, dto.currentPassword);
     }
 
     @Public()

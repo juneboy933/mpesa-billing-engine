@@ -173,10 +173,13 @@ export class MerchantsService {
         const rawApiKey = generatedApiKey.raw;
         const apiKeyHash = generatedApiKey.hash;
         const webhookSecret = `whsec_${crypto.randomBytes(32).toString('hex')}`;
+        const passwordHash = await argon2.hash(dto.password, { type: argon2.argon2id });
 
         const data = {
             name: dto.name,
-            ...(dto.phoneNumber ? { phoneNumber: normalizePhone(dto.phoneNumber) } : {}),
+            phoneNumber: normalizePhone(dto.phoneNumber),
+            ...(dto.email ? { email: dto.email.trim().toLowerCase() } : {}),
+            passwordHash,
             webhookUrl: dto.webhookUrl,
             apiKeyId: generatedApiKey.id,
             apiKeyHash,
@@ -200,6 +203,9 @@ export class MerchantsService {
                 if (dto.phoneNumber && (target.includes('phoneNumber') || adapterConstraint.includes('phoneNumber'))) {
                     throw new ConflictException('A merchant already exists for this phone number. Sign in to continue.');
                 }
+                if (dto.email && (target.includes('email') || adapterConstraint.includes('email'))) {
+                    throw new ConflictException('A merchant already exists for this email address.');
+                }
             }
             throw error;
         }
@@ -214,16 +220,37 @@ export class MerchantsService {
         });
     }
 
+    async findForPasswordAuth(phoneNumber: string) {
+        return this.prisma.merchant.findUnique({
+            where: { phoneNumber },
+            select: { id: true, name: true, phoneNumber: true, passwordHash: true },
+        });
+    }
+
+    async findForPasswordAuthById(id: string) {
+        return this.prisma.merchant.findUnique({ where: { id }, select: { id: true, passwordHash: true } });
+    }
+
+    async setPassword(merchantId: string, password: string) {
+        const passwordHash = await argon2.hash(password, { type: argon2.argon2id });
+        await this.prisma.merchant.update({ where: { id: merchantId }, data: { passwordHash }, select: { id: true } });
+        return { message: 'Password updated' };
+    }
+
     async onboard(dto: OnboardMerchantDto) {
         const generatedApiKey = await this.generateApiKey();
         const rawApiKey = generatedApiKey.raw;
         const apiKeyHash = generatedApiKey.hash;
         const webhookSecret = `whsec_${crypto.randomBytes(32).toString('hex')}`;
+        const passwordHash = await argon2.hash(dto.password, { type: argon2.argon2id });
 
         const result = await this.prisma.$transaction(async (tx) => {
             const merchant = await tx.merchant.create({
                 data: {
                     name: dto.name,
+                    phoneNumber: normalizePhone(dto.phoneNumber),
+                    ...(dto.email ? { email: dto.email.trim().toLowerCase() } : {}),
+                    passwordHash,
                     webhookUrl: dto.webhookUrl,
                     apiKeyId: generatedApiKey.id,
                     apiKeyHash,

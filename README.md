@@ -30,7 +30,7 @@ flowchart LR
   API --> Cradle[Cradle SMS]
 ```
 
-1. A merchant registers and receives an API key once. New keys include an indexed public ID, so each request looks up and verifies one key hash. Older keys remain supported temporarily; rotate them from Settings to move to indexed authentication. The dashboard uses passwordless OTP sign-in and an HttpOnly session cookie.
+1. A merchant registers with a phone number and password; email is optional and currently used only as contact information. Merchant login is independent of the SMS provider. Passwords are stored as Argon2id hashes, sign-in creates an HttpOnly session cookie, and repeated failures are throttled in Redis. Forgotten passwords use support-assisted recovery; email self-service reset is not enabled. Existing merchants can set an initial password from Settings while authenticated. Merchants who have lost all active sessions and API keys must contact support to regain access. New API keys include an indexed public ID, so each request looks up and verifies one key hash. Older keys remain supported temporarily; rotate them from Settings to move to indexed authentication.
 2. The merchant completes PayBill setup with their own Daraja consumer key, consumer secret, shortcode, and passkey. The API encrypts credentials before storage.
 3. The merchant creates a weekly or monthly plan and a subscription. The subscription is associated with that merchant and plan.
 4. A BullMQ scheduler scans for subscriptions due to be charged every five minutes. Charge workers write the attempt before sending an STK request.
@@ -38,6 +38,8 @@ flowchart LR
 6. Merchant event deliveries are stored and queued separately from billing. Delivery signs the JSON body with HMAC-SHA256, retries failures, requires HTTPS, resolves and checks the destination for every attempt, pins the connection to the checked IP, and does not follow redirects.
 
 PostgreSQL is the system of record. Redis supports BullMQ and Daraja access-token caching. Token cache keys are isolated by the merchant credential fingerprint. The dashboard's active-member metric counts active subscriptions among the 10 most recently created; subscription browsing is paginated at 20 rows. “Collected this period” means successful payment attempts in the current Nairobi calendar month. Receipt history includes every attempt.
+
+Merchant session endpoints are `POST /api/auth/signin`, `PUT /api/auth/password` (authenticated; requires current password when one already exists), and `POST /api/auth/logout`. Customer SMS notifications remain a separate service and are not part of merchant authentication. Optional email is not verified and must not be treated as a password recovery factor.
 
 ### Private merchant webhook endpoints
 
@@ -47,7 +49,7 @@ Private webhook destinations are supported only when the API host has a real net
 
 ```text
 src/
-  auth/          OTP login and server-side session management
+  auth/          Password login and server-side session management
   billing/       recurring billing scheduler and BullMQ workers
   common/        guards, decorators, DTO utilities, and phone normalization
   merchants/     registration, onboarding, analytics, and Daraja credentials
@@ -126,7 +128,7 @@ All API routes are prefixed with `/api`. Protected routes accept either an `x-ap
 | Route | Purpose |
 | --- | --- |
 | `POST /merchants` or `POST /merchants/onboarding/start` | Register a merchant; save the returned API key |
-| `POST /auth/otp/request`, `POST /auth/otp/verify`, `POST /auth/logout` | Dashboard passwordless sign-in |
+| `POST /auth/signin`, `PUT /auth/password`, `POST /auth/logout` | Dashboard password sessions and authenticated password setup/change |
 | `POST /merchants/me/rotate-api-key` | Immediately invalidate the current key and return one replacement |
 | `GET /merchants/dashboard`, `GET /merchants/analytics` | Dashboard counts and analytics |
 | `/merchants/me/onboarding`, `/merchants/me/mpesa-setup` | Resume onboarding and set up Daraja credentials |
