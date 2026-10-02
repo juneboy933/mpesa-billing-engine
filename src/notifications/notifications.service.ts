@@ -11,6 +11,7 @@ import { CradleVoicesService } from './cradle-voices.service';
 type WebhookEventType =
   | 'payment.succeeded'
   | 'payment.failed'
+  | 'payment.pending_confirmation'
   | 'subscription.past_due'
   | 'subscription.cancelled';
 

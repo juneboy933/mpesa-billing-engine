@@ -121,6 +121,16 @@ model PaymentAttempt {
   @@index([status]) 
 }
 
+model DarajaCallback {
+  id String @id @default(uuid())
+  checkoutId String @unique
+  payload Json
+  receivedAt DateTime @default(now())
+  processedAt DateTime?
+
+  @@index([processedAt, receivedAt])
+}
+
 model WebhookDelivery {
   id String @id @default(uuid())
   eventType String

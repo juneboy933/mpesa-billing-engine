@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsNumber, IsString } from 'class-validator';
+import { IsIn, IsInt, IsNotEmpty, IsString, Min } from 'class-validator';
 
 export class CreatePlanDto {
     @ApiProperty({
@@ -16,7 +16,11 @@ export class CreatePlanDto {
         example: 500,
         minimum: 1,
     })
-    @IsNotEmpty()
-    @IsNumber()
+    @IsInt()
+    @Min(1)
     readonly amount: number;
+
+    @ApiProperty({ enum: ['WEEKLY', 'MONTHLY'], default: 'MONTHLY' })
+    @IsIn(['WEEKLY', 'MONTHLY'])
+    readonly interval: 'WEEKLY' | 'MONTHLY' = 'MONTHLY';
 }

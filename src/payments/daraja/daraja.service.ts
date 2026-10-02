@@ -21,6 +21,20 @@ export interface MerchantCredentials {
     passkey: string;
 }
 
+export class StkPushOutcomeUnknownError extends Error {
+    constructor() {
+        super('Daraja did not confirm whether the STK request was accepted');
+        this.name = 'StkPushOutcomeUnknownError';
+    }
+}
+
+export class StkPushRejectedError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'StkPushRejectedError';
+    }
+}
+
 const TOKEN_CACHE_KEY = 'daraja:access_token';
 
 @Injectable()
@@ -66,7 +80,7 @@ export class DarajaService {
                 this.logger.warn(`Failed to cache token in Redis: ${error instanceof Error ? error.message : 'Unknown error'}`);
             }
             return token;
-        } catch (error) {
+        } catch {
             throw new ServiceUnavailableException('Failed to retrieve M-Pesa access token');
         }
     }
@@ -147,11 +161,19 @@ export class DarajaService {
             const result = await axios.post<StkResponse>(stkPushUrl, payload, {
                 headers: {
                     Authorization: `Bearer ${token}`
-                }
+                },
+                timeout: 30_000,
             });
+            if (result.data.ResponseCode !== '0') {
+                throw new StkPushRejectedError(result.data.ResponseDescription || 'Daraja rejected the STK request');
+            }
             return result.data;
         } catch (error) {
-            throw new ServiceUnavailableException('Failed to trigger STK push');
+            if (error instanceof StkPushRejectedError) throw error;
+            if (axios.isAxiosError(error) && error.response && error.response.status < 500) {
+                throw new StkPushRejectedError('Daraja rejected the STK request');
+            }
+            throw new StkPushOutcomeUnknownError();
         }
     }
 

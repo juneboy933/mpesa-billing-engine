@@ -66,6 +66,7 @@ describe('PlansService', () => {
       data: {
         name: 'Gold Plan',
         amount: 1200,
+        interval: 'MONTHLY',
         merchantId: 'merchant_1',
       },
       select: {

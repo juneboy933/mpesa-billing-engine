@@ -45,7 +45,7 @@ function OnboardingPage() {
   const [phone, setPhone] = useState(resumed?.phone ?? '')
   const [code, setCode] = useState('')
   const [credentials, setCredentials] = useState({ consumerKey: '', consumerSecret: '', shortcode: '', passkey: '' })
-  const [plan, setPlan] = useState({ name: 'Monthly membership', amount: '2500' })
+  const [plan, setPlan] = useState({ name: 'Monthly membership', amount: '2500', interval: 'MONTHLY' as 'WEEKLY' | 'MONTHLY' })
   const [registered, setRegistered] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -85,7 +85,7 @@ function OnboardingPage() {
   })
 
   const finish = () => run(async () => {
-    await api.createFirstPlan(plan.name.trim(), Number(plan.amount))
+    await api.createFirstPlan(plan.name.trim(), Number(plan.amount), plan.interval)
     navigate('/dashboard')
   })
 
@@ -141,8 +141,13 @@ function OnboardingPage() {
           {step === 3 && <FormStep icon={<MessageSquareText size={20} />} tone="green" title="Create your first membership plan" copy="You can add more plans from the dashboard later.">
             <label htmlFor="first-plan-name">Plan name</label>
             <input id="first-plan-name" value={plan.name} onChange={event => setPlan({ ...plan, name: event.target.value })} />
-            <label htmlFor="first-plan-amount">Monthly price (KES)</label>
-            <input id="first-plan-amount" type="number" min="1" value={plan.amount} onChange={event => setPlan({ ...plan, amount: event.target.value })} />
+            <label htmlFor="first-plan-interval">Billing interval</label>
+            <select id="first-plan-interval" value={plan.interval} onChange={event => setPlan({ ...plan, interval: event.target.value as 'WEEKLY' | 'MONTHLY' })}>
+              <option value="WEEKLY">Weekly</option>
+              <option value="MONTHLY">Monthly</option>
+            </select>
+            <label htmlFor="first-plan-amount">{plan.interval === 'WEEKLY' ? 'Weekly' : 'Monthly'} price (KES)</label>
+            <input id="first-plan-amount" type="number" min="1" step="1" value={plan.amount} onChange={event => setPlan({ ...plan, amount: event.target.value })} />
             {error && <p className="form-error" role="alert">{error}</p>}
             <button className="primary-button wide" disabled={!plan.name.trim() || Number(plan.amount) <= 0 || loading} onClick={finish}>{loading ? 'Finishing setup...' : 'Finish setup'}</button>
           </FormStep>}

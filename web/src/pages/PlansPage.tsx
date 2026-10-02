@@ -8,6 +8,7 @@ export function PlansPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [name, setName] = useState('');
   const [amount, setAmount] = useState('');
+  const [interval, setInterval] = useState<'WEEKLY' | 'MONTHLY'>('MONTHLY');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -30,9 +31,10 @@ export function PlansPage() {
     setSaving(true);
     setError('');
     try {
-      await api.createPlan(name.trim(), Number(amount));
+      await api.createPlan(name.trim(), Number(amount), interval);
       setName('');
       setAmount('');
+      setInterval('MONTHLY');
       await load();
     } catch (saveError) {
       setError(
@@ -100,12 +102,22 @@ export function PlansPage() {
             placeholder="Monthly membership"
             required
           />
-          <label htmlFor="new-plan-amount">Monthly price</label>
+          <label htmlFor="new-plan-interval">Billing interval</label>
+          <select
+            id="new-plan-interval"
+            value={interval}
+            onChange={(event) => setInterval(event.target.value as 'WEEKLY' | 'MONTHLY')}
+          >
+            <option value="WEEKLY">Weekly</option>
+            <option value="MONTHLY">Monthly</option>
+          </select>
+          <label htmlFor="new-plan-amount">{interval === 'WEEKLY' ? 'Weekly' : 'Monthly'} price</label>
           <div className="input-with-suffix">
             <input
               id="new-plan-amount"
               type="number"
               min="1"
+              step="1"
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
               placeholder="2500"

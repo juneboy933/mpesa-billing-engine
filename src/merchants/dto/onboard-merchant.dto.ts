@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsNumber, IsOptional, IsString, IsUrl } from 'class-validator';
+import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUrl, Min } from 'class-validator';
 
 export class OnboardMerchantDto {
     @ApiProperty({
@@ -35,7 +35,12 @@ export class OnboardMerchantDto {
         example: 500,
         minimum: 1,
     })
-    @IsNumber()
-    @IsNotEmpty()
+    @IsInt()
+    @Min(1)
     planAmount: number;
+
+    @ApiProperty({ enum: ['WEEKLY', 'MONTHLY'], default: 'MONTHLY' })
+    @IsOptional()
+    @IsIn(['WEEKLY', 'MONTHLY'])
+    interval?: 'WEEKLY' | 'MONTHLY';
 }

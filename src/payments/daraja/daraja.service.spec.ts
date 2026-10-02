@@ -1,10 +1,9 @@
-import { InternalServerErrorException, ServiceUnavailableException } from '@nestjs/common';
+import { InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import axios from 'axios';
-import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../redis/redis.module';
-import { DarajaService } from './daraja.service';
+import { DarajaService, StkPushOutcomeUnknownError } from './daraja.service';
 
 describe('DarajaService', () => {
   let service: DarajaService;
@@ -105,7 +104,7 @@ describe('DarajaService', () => {
         TransactionDesc: 'Gold plan subscription',
         Timestamp: '20240101010101',
       }),
-      { headers: { Authorization: 'Bearer token-123' } },
+      { headers: { Authorization: 'Bearer token-123' }, timeout: 30_000 },
     );
     expect(result).toEqual({
       MerchantRequestID: 'req-1',
@@ -122,7 +121,7 @@ describe('DarajaService', () => {
     await expect(service.getAccessToken()).rejects.toThrow(InternalServerErrorException);
   });
 
-  it('wraps STK push failures as a service unavailable exception', async () => {
+  it('marks STK transport failures as an unknown outcome to prevent duplicate prompts', async () => {
     jest.spyOn(service, 'getAccessToken').mockResolvedValue('token-123');
     jest.spyOn(service, 'generateTimestamp').mockReturnValue('20240101010101');
     jest.spyOn(service, 'generatePassword').mockReturnValue('password');
@@ -135,6 +134,6 @@ describe('DarajaService', () => {
         accountReference: 'Gold plan',
         transactionDec: 'Gold plan subscription',
       }),
-    ).rejects.toThrow(ServiceUnavailableException);
+    ).rejects.toThrow(StkPushOutcomeUnknownError);
   });
 });

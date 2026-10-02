@@ -30,6 +30,7 @@ export class PlansService {
             data: {
                 name: dto.name.trim(),
                 amount: dto.amount,
+                interval: dto.interval ?? 'MONTHLY',
                 merchantId
             },
             select: planSelect,
@@ -42,7 +43,8 @@ export class PlansService {
             where: { id: planId, merchantId },
             data: {
                 name: dto.name?.trim(),
-                amount: dto.amount
+                amount: dto.amount,
+                interval: dto.interval,
             },
             select: planSelect,
         });

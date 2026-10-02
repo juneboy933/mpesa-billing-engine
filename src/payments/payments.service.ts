@@ -6,7 +6,7 @@ import { StkCallbackBody } from './dto/callback.dto';
 import { Prisma } from '../generated/prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { MpesaCredentialsService } from '../merchants/mpesa-credentials.service';
-import { MerchantCredentials } from './daraja/daraja.service';
+import { MerchantCredentials, StkPushOutcomeUnknownError } from './daraja/daraja.service';
 
 @Injectable()
 export class PaymentsService {
@@ -24,33 +24,39 @@ export class PaymentsService {
     private async advanceRetryOrPastDue(
         tx: Prisma.TransactionClient,
         attempt: { id: string; attemptNumber: number; subscriptionId: string },
-    ) {
+    ): Promise<'RETRYING' | 'PAST_DUE' | 'CANCELLED'> {
         const retryIndex = attempt.attemptNumber - 1;
 
         if (retryIndex < this.RETRY_SCHEDULE_DAYS.length) {
             const nextRetryDate = new Date();
             nextRetryDate.setDate(nextRetryDate.getDate() + this.RETRY_SCHEDULE_DAYS[retryIndex]);
 
-            await tx.subscription.update({
-                where: { id: attempt.subscriptionId },
+            const updated = await tx.subscription.updateMany({
+                where: {
+                    id: attempt.subscriptionId,
+                    status: { in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.RETRYING, SubscriptionStatus.PAST_DUE] },
+                },
                 data: { status: SubscriptionStatus.RETRYING, nextBillingDate: nextRetryDate },
             });
 
-            return 'RETRYING';
+            return updated.count ? 'RETRYING' : 'CANCELLED';
         } else {
-            await tx.subscription.update({
-                where: { id: attempt.subscriptionId },
+            const updated = await tx.subscription.updateMany({
+                where: {
+                    id: attempt.subscriptionId,
+                    status: { in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.RETRYING, SubscriptionStatus.PAST_DUE] },
+                },
                 data: { status: SubscriptionStatus.PAST_DUE },
             });
 
-            return 'PAST_DUE';
+            return updated.count ? 'PAST_DUE' : 'CANCELLED';
         }
     }
 
     private async notifyFailureOutcome(
         attempt: { subscriptionId: string; attemptNumber: number },
         merchantId: string,
-        outcome: 'RETRYING' | 'PAST_DUE',
+        outcome: 'RETRYING' | 'PAST_DUE' | 'CANCELLED',
         resultDesc?: string,
         ) {
             await this.notification.send(merchantId, 'payment.failed', {
@@ -77,16 +83,43 @@ export class PaymentsService {
         });
 
         for (const attempt of stuck) {
-            const outcome = await this.prisma.$transaction(async (tx) => {
-                await tx.paymentAttempt.update({
-                    where: { id: attempt.id },
-                    data: { status: PaymentAttemptStatus.TIMED_OUT, resolvedAt: new Date() },
-                });
-                return await this.advanceRetryOrPastDue(tx, attempt);
+            const movedToPending = await this.prisma.paymentAttempt.updateMany({
+                where: { id: attempt.id, status: PaymentAttemptStatus.INITIATED },
+                data: { status: PaymentAttemptStatus.PENDING_CONFIRMATION },
             });
-
-            await this.notifyFailureOutcome(attempt, attempt.subscription.merchantId, outcome);
+            if (movedToPending.count) {
+                this.logger.warn(`Payment attempt ${attempt.id} is awaiting provider confirmation; automatic retries are held to avoid duplicate charges`);
+                await this.notifyPendingConfirmation(attempt, attempt.subscription.merchantId);
+            }
         }
+    }
+
+    async reprocessPendingCallbacks() {
+        const callbacks = await this.prisma.darajaCallback.findMany({
+            where: { processedAt: null },
+            orderBy: { receivedAt: 'asc' },
+            take: 100,
+        });
+
+        for (const buffered of callbacks) {
+            const attempt = await this.prisma.paymentAttempt.findUnique({
+                where: { checkoutId: buffered.checkoutId },
+                select: { id: true },
+            });
+            if (attempt) await this.processCallback(buffered.payload as unknown as StkCallbackBody);
+        }
+    }
+
+    private async notifyPendingConfirmation(
+        attempt: { id: string; subscriptionId: string; attemptNumber: number },
+        merchantId: string,
+    ) {
+        await this.notification.send(merchantId, 'payment.pending_confirmation', {
+            paymentAttemptId: attempt.id,
+            subscriptionId: attempt.subscriptionId,
+            attemptNumber: attempt.attemptNumber,
+            resolutionRequired: true,
+        });
     }
 
     async getReceipts(merchantId: string, subscriptionId: string) {
@@ -173,90 +206,157 @@ export class PaymentsService {
     }
 
     async triggerSTkPush(subscriptionId: string) {
-        const subscription = await this.prisma.subscription.findUnique({
-            where: { id: subscriptionId },
-            include: {
-                plan: true,
-                merchant: {
-                    select: {
-                        mpesaConsumerKeyEncrypted: true,
-                        mpesaConsumerSecretEncrypted: true,
-                        mpesaShortcode: true,
-                        mpesaPasskeyEncrypted: true,
-                        mpesaSetupStatus: true,
+        const attemptData = await this.prisma.$transaction(async (tx) => {
+            const subscription = await tx.subscription.findUnique({
+                where: { id: subscriptionId },
+                include: {
+                    plan: true,
+                    merchant: {
+                        select: {
+                            mpesaConsumerKeyEncrypted: true,
+                            mpesaConsumerSecretEncrypted: true,
+                            mpesaShortcode: true,
+                            mpesaPasskeyEncrypted: true,
+                            mpesaSetupStatus: true,
+                        },
                     },
                 },
-            },
-        });
+            });
 
-        if(!subscription) throw new NotFoundException('Subscription not found');
+            if (!subscription) throw new NotFoundException('Subscription not found');
+            if (subscription.status === SubscriptionStatus.CANCELLED) {
+                throw new ConflictException('Cancelled subscriptions cannot be charged');
+            }
+            const planAmount = subscription.plan.amount.toNumber();
+            if (!Number.isInteger(planAmount) || planAmount < 1) {
+                throw new BadRequestException('Plan amount must be a positive whole KES amount');
+            }
+            if (![SubscriptionStatus.ACTIVE, SubscriptionStatus.RETRYING, SubscriptionStatus.PAST_DUE].includes(subscription.status)) {
+                throw new ConflictException('Subscription is not eligible for payment');
+            }
 
-        if (subscription.merchant && subscription.merchant.mpesaSetupStatus !== 'COMPLETED') {
-            throw new BadRequestException('Complete M-Pesa setup before collecting payments');
-        }
-        
-        const lastAttempt = await this.prisma.paymentAttempt.findFirst({
-            where: { subscriptionId },
-            orderBy: { createdAt: 'desc' },
-        });
+            const merchant = subscription.merchant;
+            if (
+                !merchant || merchant.mpesaSetupStatus !== 'COMPLETED' ||
+                !merchant.mpesaConsumerKeyEncrypted || !merchant.mpesaConsumerSecretEncrypted ||
+                !merchant.mpesaShortcode || !merchant.mpesaPasskeyEncrypted
+            ) {
+                throw new BadRequestException('Complete M-Pesa setup before collecting payments');
+            }
 
-        const attemptNumber =
-            lastAttempt?.status === PaymentAttemptStatus.FAILED ||
-            lastAttempt?.status === PaymentAttemptStatus.TIMED_OUT
-            ? lastAttempt.attemptNumber + 1
-            : 1;
+            // This conditional write serializes the charge claim against cancellation.
+            const claim = await tx.subscription.updateMany({
+                where: {
+                    id: subscription.id,
+                    status: { in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.RETRYING, SubscriptionStatus.PAST_DUE] },
+                },
+                data: { updatedAt: new Date() },
+            });
+            if (!claim.count) throw new ConflictException('Subscription is no longer eligible for payment');
 
-        const idempotencyKey = `charge:${subscriptionId}:${subscription.nextBillingDate.toISOString()}`;
+            const lastAttempt = await tx.paymentAttempt.findFirst({
+                where: { subscriptionId },
+                orderBy: { createdAt: 'desc' },
+            });
+            const attemptNumber =
+                lastAttempt?.status === PaymentAttemptStatus.FAILED ||
+                lastAttempt?.status === PaymentAttemptStatus.TIMED_OUT
+                    ? lastAttempt.attemptNumber + 1
+                    : 1;
+            const idempotencyKey = `charge:${subscriptionId}:${subscription.nextBillingDate.toISOString()}:${attemptNumber}`;
 
-        let attempt;
-        try {
-            attempt = await this.prisma.paymentAttempt.create({
+            const attempt = await tx.paymentAttempt.create({
                 data: {
                     subscriptionId,
                     idempotencyKey,
                     status: PaymentAttemptStatus.SCHEDULED,
-                    amount: subscription.plan.amount.toNumber(),
+                    amount: planAmount,
                     attemptNumber,
-                }
+                },
             });
-            
-        } catch (error) {
+
+            return { subscription, attempt };
+        }).catch((error) => {
             if (error instanceof Object && 'code' in error && error.code === 'P2002') {
                 throw new ConflictException('A payment attempt already exists for this billing cycle');
             }
             throw error;
+        });
+
+        const { subscription, attempt } = attemptData;
+
+        // Recheck cancellation immediately before crossing the provider boundary.
+        const initiated = await this.prisma.$transaction(async (tx) => {
+            const claim = await tx.subscription.updateMany({
+                where: {
+                    id: subscriptionId,
+                    status: { in: [SubscriptionStatus.ACTIVE, SubscriptionStatus.RETRYING, SubscriptionStatus.PAST_DUE] },
+                },
+                data: { updatedAt: new Date() },
+            });
+            if (!claim.count) return false;
+            const updated = await tx.paymentAttempt.updateMany({
+                where: { id: attempt.id, status: PaymentAttemptStatus.SCHEDULED },
+                data: { status: PaymentAttemptStatus.INITIATED },
+            });
+            return updated.count === 1;
+        });
+        if (!initiated) {
+            await this.prisma.paymentAttempt.updateMany({
+                where: { id: attempt.id, status: PaymentAttemptStatus.SCHEDULED },
+                data: { status: PaymentAttemptStatus.FAILED, resolvedAt: new Date() },
+            });
+            throw new ConflictException('Subscription was cancelled before payment could be sent');
         }
 
         try {
-            const merchantCredentials = subscription.merchant?.mpesaSetupStatus === 'COMPLETED'
-                ? {
-                    consumerKey: this.mpesaCredentials.decrypt(subscription.merchant.mpesaConsumerKeyEncrypted!),
-                    consumerSecret: this.mpesaCredentials.decrypt(subscription.merchant.mpesaConsumerSecretEncrypted!),
-                    shortcode: subscription.merchant.mpesaShortcode!,
-                    passkey: this.mpesaCredentials.decrypt(subscription.merchant.mpesaPasskeyEncrypted!),
-                } satisfies MerchantCredentials
-                : undefined;
-
+            const merchant = subscription.merchant!;
+            const merchantCredentials: MerchantCredentials = {
+                consumerKey: this.mpesaCredentials.decrypt(merchant.mpesaConsumerKeyEncrypted!),
+                consumerSecret: this.mpesaCredentials.decrypt(merchant.mpesaConsumerSecretEncrypted!),
+                shortcode: merchant.mpesaShortcode!,
+                passkey: this.mpesaCredentials.decrypt(merchant.mpesaPasskeyEncrypted!),
+            };
             const stkPayload = {
                 phone: subscription.customerPhone,
-                amount: Math.round(subscription.plan.amount.toNumber()),
+                amount: subscription.plan.amount.toNumber(),
                 accountReference: subscription.plan.name,
                 transactionDec: `${subscription.plan.name} subscription`,
             };
-            const { CheckoutRequestID } = merchantCredentials
-                ? await this.daraja.triggerStk(stkPayload, merchantCredentials)
-                : await this.daraja.triggerStk(stkPayload);
+            const { CheckoutRequestID } = await this.daraja.triggerStk(stkPayload, merchantCredentials);
 
-            await this.prisma.paymentAttempt.update({
-                where: { id: attempt.id },
-                data: { status: PaymentAttemptStatus.INITIATED, checkoutId: CheckoutRequestID },
+            await this.prisma.paymentAttempt.updateMany({
+                where: { id: attempt.id, status: PaymentAttemptStatus.INITIATED },
+                data: { checkoutId: CheckoutRequestID },
             });
+            const bufferedCallback = await this.prisma.darajaCallback.findUnique({
+                where: { checkoutId: CheckoutRequestID },
+            });
+            if (bufferedCallback && !bufferedCallback.processedAt) {
+                await this.processCallback(bufferedCallback.payload as unknown as StkCallbackBody);
+            }
         } catch (error) {
-            await this.prisma.paymentAttempt.update({
-                where: { id: attempt.id },
-                data: { status: PaymentAttemptStatus.FAILED, resolvedAt: new Date() }
+            if (error instanceof StkPushOutcomeUnknownError) {
+                const pending = await this.prisma.paymentAttempt.updateMany({
+                    where: { id: attempt.id, status: PaymentAttemptStatus.INITIATED },
+                    data: { status: PaymentAttemptStatus.PENDING_CONFIRMATION },
+                });
+                if (pending.count) await this.notifyPendingConfirmation(attempt, subscription.merchantId);
+                throw error;
+            }
+            const failed = await this.prisma.$transaction(async (tx) => {
+                const transitioned = await tx.paymentAttempt.updateMany({
+                    where: { id: attempt.id, status: PaymentAttemptStatus.INITIATED },
+                    data: { status: PaymentAttemptStatus.FAILED, resolvedAt: new Date() },
+                });
+                if (!transitioned.count) return null;
+                const outcome = await this.advanceRetryOrPastDue(tx, attempt);
+                return outcome;
             });
 
+            if (failed) {
+                await this.notifyFailureOutcome(attempt, subscription.merchantId, failed, error instanceof Error ? error.message : undefined);
+            }
             throw error;
         }
     }
@@ -266,64 +366,117 @@ export class PaymentsService {
 
         const attempt = await this.prisma.paymentAttempt.findUnique({
             where: { checkoutId: stkCallback.CheckoutRequestID},
-            include: { subscription: true },
+            include: { subscription: { include: { plan: true } } },
         });
 
         if(!attempt) {
             this.logger.warn(`Callback for unknown CheckoutRequestId: ${stkCallback.CheckoutRequestID}`);
-            return { received: true }
+            await this.prisma.darajaCallback.upsert({
+                where: { checkoutId: stkCallback.CheckoutRequestID },
+                create: {
+                    checkoutId: stkCallback.CheckoutRequestID,
+                    payload: callback as unknown as Prisma.InputJsonValue,
+                },
+                update: {},
+            });
+            return { received: true, pending: true };
         }
 
         if(stkCallback.ResultCode !== 0) {
             this.logger.error(`Payment not successfull - ResultCode: ${stkCallback.ResultCode}, Desc: ${stkCallback.ResultDesc}`);
 
             const outcome = await this.prisma.$transaction(async (tx) => {
-                await tx.paymentAttempt.update({
-                    where: { id: attempt.id },
+                const transitioned = await tx.paymentAttempt.updateMany({
+                    where: {
+                        id: attempt.id,
+                        status: { in: [PaymentAttemptStatus.INITIATED, PaymentAttemptStatus.PENDING_CONFIRMATION] },
+                    },
                     data: { status: PaymentAttemptStatus.FAILED, resolvedAt: new Date() },
                 });
-
-                return this.advanceRetryOrPastDue(tx, attempt);
+                if (!transitioned.count) {
+                    await tx.darajaCallback.updateMany({
+                        where: { checkoutId: stkCallback.CheckoutRequestID, processedAt: null },
+                        data: { processedAt: new Date() },
+                    });
+                    return null;
+                }
+                const outcome = await this.advanceRetryOrPastDue(tx, attempt);
+                await tx.darajaCallback.updateMany({
+                    where: { checkoutId: stkCallback.CheckoutRequestID, processedAt: null },
+                    data: { processedAt: new Date() },
+                });
+                return outcome;
             });
             
-           await this.notifyFailureOutcome(
-                attempt, 
-                attempt.subscription.merchantId, 
-                outcome, 
-                stkCallback.ResultDesc
-            );
+            if (outcome) {
+                await this.notifyFailureOutcome(
+                    attempt,
+                    attempt.subscription.merchantId,
+                    outcome,
+                    stkCallback.ResultDesc,
+                );
+            }
 
-            return { received: true }
+            return { received: true, duplicate: !outcome };
         }
 
-        const newNextBillingDate = this.addOneMonth(attempt.subscription.nextBillingDate);
+        const processed = await this.prisma.$transaction(async (tx) => {
+            const transitioned = await tx.paymentAttempt.updateMany({
+                where: {
+                    id: attempt.id,
+                    status: {
+                        in: [PaymentAttemptStatus.INITIATED, PaymentAttemptStatus.PENDING_CONFIRMATION, PaymentAttemptStatus.TIMED_OUT],
+                    },
+                },
+                data: { status: PaymentAttemptStatus.SUCCEEDED, resolvedAt: new Date() },
+            });
+            if (!transitioned.count) {
+                await tx.darajaCallback.updateMany({
+                    where: { checkoutId: stkCallback.CheckoutRequestID, processedAt: null },
+                    data: { processedAt: new Date() },
+                });
+                return false;
+            }
 
-        await this.prisma.$transaction([
-            this.prisma.paymentAttempt.update({
-                where: { id: attempt.id },
-                data: { status: PaymentAttemptStatus.SUCCEEDED, resolvedAt: new Date()},
-            }),
-
-            this.prisma.subscription.update({
-                where: { id: attempt.subscriptionId },
-                data: { 
+            await tx.subscription.updateMany({
+                where: {
+                    id: attempt.subscriptionId,
+                    status: { not: SubscriptionStatus.CANCELLED },
+                },
+                data: {
                     status: SubscriptionStatus.ACTIVE,
-                    nextBillingDate: newNextBillingDate,
-                }
-            })
+                    nextBillingDate: this.addInterval(attempt.subscription.nextBillingDate, attempt.subscription.plan.interval),
+                },
+            });
+            await tx.darajaCallback.updateMany({
+                where: { checkoutId: stkCallback.CheckoutRequestID, processedAt: null },
+                data: { processedAt: new Date() },
+            });
+            return true;
+        });
 
-        ])
+        if (!processed) return { received: true, duplicate: true };
 
         await this.notification.send(attempt.subscription.merchantId, 'payment.succeeded', {
             subscriptionId: attempt.subscriptionId,
             attemptNumber: Number(attempt.attemptNumber),
             amount: Number(attempt.amount),
         })
+        return { received: true };
     }
 
-    private addOneMonth(date: Date): Date {
+    private addInterval(date: Date, interval: string): Date {
         const result = new Date(date);
-        result.setMonth(result.getMonth() + 1);
+        if (interval === 'WEEKLY') {
+            result.setUTCDate(result.getUTCDate() + 7);
+            return result;
+        }
+
+        const originalDay = result.getUTCDate();
+        result.setUTCDate(1);
+        result.setUTCMonth(result.getUTCMonth() + 1);
+        const lastDayOfTargetMonth = new Date(Date.UTC(result.getUTCFullYear(), result.getUTCMonth() + 1, 0)).getUTCDate();
+        result.setUTCDate(Math.min(originalDay, lastDayOfTargetMonth));
         return result;
     }
 }

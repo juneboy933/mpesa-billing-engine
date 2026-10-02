@@ -112,6 +112,7 @@ export class MerchantsService {
             data: {
                 name: dto.name.trim(),
                 amount: dto.amount,
+                interval: dto.interval ?? 'MONTHLY',
                 merchantId,
             },
             select: planSelect,
@@ -231,6 +232,7 @@ export class MerchantsService {
                 data: {
                     name: dto.planName.trim(),
                     amount: dto.planAmount,
+                    interval: dto.interval ?? 'MONTHLY',
                     merchantId: merchant.id,
                 },
                 select: {

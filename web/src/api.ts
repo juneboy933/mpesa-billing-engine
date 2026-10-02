@@ -51,13 +51,13 @@ export const api = {
   getOnboardingStatus: () => request<OnboardingStatus>('/merchants/me/onboarding'),
   setupMpesa: (credentials: { consumerKey: string; consumerSecret: string; shortcode: string; passkey: string }) =>
     request('/merchants/me/mpesa-setup', { method: 'POST', body: credentials }),
-  createFirstPlan: (name: string, amount: number) =>
-    request('/merchants/me/onboarding/plan', { method: 'POST', body: { name, amount } }),
+  createFirstPlan: (name: string, amount: number, interval: 'WEEKLY' | 'MONTHLY') =>
+    request('/merchants/me/onboarding/plan', { method: 'POST', body: { name, amount, interval } }),
   getDashboard: () => request<Dashboard>('/merchants/dashboard'),
   getAnalytics: () => request<Analytics>('/merchants/analytics'),
   getPlans: () => request<Plan[]>('/plans'),
   getPlanManagement: () => request<{ totalPlans: number; totalActiveSubscriptions: number; plans: Plan[] }>('/plans/management'),
-  createPlan: (name: string, amount: number) => request<Plan>('/plans', { method: 'POST', body: { name, amount } }),
+  createPlan: (name: string, amount: number, interval: 'WEEKLY' | 'MONTHLY') => request<Plan>('/plans', { method: 'POST', body: { name, amount, interval } }),
   getSubscriptions: () => request<{ subscriptions: Subscription[] }>('/subscriptions/management').then(data => data.subscriptions),
   getSubscriptionManagement: () => request<{ totalSubscriptions: number; activeSubscriptions: number; subscriptions: Subscription[] }>('/subscriptions/management'),
   createSubscription: (planId: string, customerPhone: string) => request('/subscriptions', { method: 'POST', body: { planId, customerPhone } }),
