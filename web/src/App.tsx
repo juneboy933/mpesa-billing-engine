@@ -1,72 +1,211 @@
 import { useState, type ReactNode } from 'react'
-import { ArrowRight, Check, ChevronRight, CircleHelp, CreditCard, LayoutDashboard, Menu, MessageSquareText, ShieldCheck, Sparkles, X } from 'lucide-react'
+import { ArrowRight, Check, CreditCard, LayoutDashboard, MessageSquareText, ShieldCheck } from 'lucide-react'
+import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { api } from './api'
+import { onboardingStepFor } from './onboardingFlow'
+import { AppShell } from './layouts/AppShell'
+import { AnalyticsPage } from './pages/AnalyticsPage'
+import { DashboardPage } from './pages/DashboardPage'
+import { HomePage } from './pages/HomePage'
+import { PlansPage } from './pages/PlansPage'
+import { RecoveryPage } from './pages/RecoveryPage'
+import { SettingsPage } from './pages/SettingsPage'
+import { SubscriptionsPage } from './pages/SubscriptionsPage'
 import './App.css'
 
-type View = 'home' | 'onboarding' | 'signin' | 'dashboard'
-const steps = ['Business details', 'Verify phone', 'PayBill setup', 'First membership plan']
-
 function App() {
-  const [view, setView] = useState<View>('home')
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [step, setStep] = useState(0)
-  const [businessName, setBusinessName] = useState('')
-  const [phoneNumber, setPhoneNumber] = useState('')
-  const [authError, setAuthError] = useState('')
-  const [authLoading, setAuthLoading] = useState(false)
-  const start = () => { setView('onboarding'); setMenuOpen(false) }
-  const signIn = () => { setView('signin'); setMenuOpen(false); setAuthError('') }
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/onboarding" element={<OnboardingPage />} />
+        <Route path="/signin" element={<SignInPage />} />
+        <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
+        <Route path="/plans" element={<Protected><PlansPage /></Protected>} />
+        <Route path="/subscriptions" element={<Protected><SubscriptionsPage /></Protected>} />
+        <Route path="/recovery" element={<Protected><RecoveryPage /></Protected>} />
+        <Route path="/analytics" element={<Protected><AnalyticsPage /></Protected>} />
+        <Route path="/settings" element={<Protected><SettingsPage /></Protected>} />
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
+    </BrowserRouter>
+  )
+}
 
-  if (view === 'onboarding') return <Onboarding businessName={businessName} setBusinessName={setBusinessName} phoneNumber={phoneNumber} setPhoneNumber={setPhoneNumber} step={step} setStep={setStep} onHome={() => setView('home')} onDashboard={() => setView('dashboard')} />
-  if (view === 'signin') return <SignIn phoneNumber={phoneNumber} setPhoneNumber={setPhoneNumber} error={authError} loading={authLoading} onHome={() => setView('home')} onSubmit={async (phone, code) => { setAuthLoading(true); setAuthError(''); try { await api.verifyOtp(phone, code); const status = await api.getOnboardingStatus(); setBusinessName(status.businessName ?? ''); if (status.nextStep === 'DASHBOARD') setView('dashboard'); else { setStep(status.nextStep === 'MPESA_SETUP' ? 2 : 3); setView('onboarding') } } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to sign in') } finally { setAuthLoading(false) } }} onRequestOtp={async phone => { setAuthLoading(true); setAuthError(''); try { await api.requestOtp(phone); return true } catch (error) { setAuthError(error instanceof Error ? error.message : 'Unable to send code'); return false } finally { setAuthLoading(false) } }} />
-  if (view === 'dashboard') return <Dashboard businessName={businessName || 'Northstar Fitness'} onHome={() => setView('home')} />
+function Protected({ children }: { children: ReactNode }) {
+  return <AppShell>{children}</AppShell>
+}
 
-  return <main className="site-shell">
-    <nav className="public-nav">
-      <Brand onClick={() => setView('home')} />
-      <div className={`nav-links ${menuOpen ? 'open' : ''}`}><a href="#how-it-works" onClick={() => setMenuOpen(false)}>How it works</a><a href="#built-for" onClick={() => setMenuOpen(false)}>For memberships</a><button className="nav-login" onClick={signIn}>Sign in</button><button className="primary-button nav-cta" onClick={start}>Start free setup <ArrowRight size={16} /></button></div>
-      <button className="mobile-menu" onClick={() => setMenuOpen(!menuOpen)} aria-label="Toggle navigation">{menuOpen ? <X size={22} /> : <Menu size={22} />}</button>
-    </nav>
-    <section className="hero-section">
-      <div className="hero-copy"><div className="eyebrow"><span className="live-dot" /> Built for Kenyan membership businesses</div><h1>Recurring payments, <em>without the chase.</em></h1><p>NiaFlow helps gyms and membership teams collect monthly M-Pesa payments, recover failed charges, and give every customer a clear way to stay paid.</p><div className="hero-actions"><button className="primary-button" onClick={start}>Start your setup <ArrowRight size={17} /></button><a className="quiet-link" href="#how-it-works">See how it works <ChevronRight size={16} /></a></div><div className="trust-row"><span><ShieldCheck size={15} /> Encrypted credentials</span><span><Check size={15} /> PayBill ready</span></div></div>
-      <HeroVisual />
+function OnboardingPage() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  const resumed = location.state as { step?: number; phone?: string } | null
+  const [step, setStep] = useState(resumed?.step ?? 0)
+  const [business, setBusiness] = useState('')
+  const [phone, setPhone] = useState(resumed?.phone ?? '')
+  const [code, setCode] = useState('')
+  const [credentials, setCredentials] = useState({ consumerKey: '', consumerSecret: '', shortcode: '', passkey: '' })
+  const [plan, setPlan] = useState({ name: 'Monthly membership', amount: '2500' })
+  const [registered, setRegistered] = useState(false)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const run = async (action: () => Promise<void>) => {
+    setLoading(true)
+    setError('')
+    try {
+      await action()
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'Something went wrong')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const register = () => run(async () => {
+    if (!registered) {
+      await api.registerMerchant(business.trim(), phone.trim())
+      setRegistered(true)
+    }
+    await api.requestOtp(phone.trim())
+    setStep(1)
+  })
+
+  const verify = () => run(async () => {
+    await api.verifyOtp(phone.trim(), code)
+    const status = await api.getOnboardingStatus()
+    const nextStep = onboardingStepFor(status)
+    if (nextStep === null) navigate('/dashboard')
+    else setStep(nextStep)
+  })
+
+  const setup = () => run(async () => {
+    await api.setupMpesa(credentials)
+    setStep(3)
+  })
+
+  const finish = () => run(async () => {
+    await api.createFirstPlan(plan.name.trim(), Number(plan.amount))
+    navigate('/dashboard')
+  })
+
+  const fields = [
+    { key: 'shortcode', label: 'PayBill number' },
+    { key: 'consumerKey', label: 'Consumer key' },
+    { key: 'consumerSecret', label: 'Consumer secret' },
+    { key: 'passkey', label: 'Passkey' },
+  ] as const
+
+  return (
+    <main className="app-frame">
+      <header className="app-header">
+        <button className="brand brand-button" onClick={() => navigate('/')}>
+          <span className="brand-mark"><ShieldCheck size={17} /></span>NiaFlow
+        </button>
+        <span className="secure-note"><ShieldCheck size={16} /> Secure setup</span>
+      </header>
+      <section className="onboarding-layout">
+        <aside className="onboarding-rail">
+          <div className="eyebrow">Merchant setup</div>
+          <h1>Get your collections moving.</h1>
+          <p>Complete the steps once, then run your workspace from one calm place.</p>
+          <div className="step-list">
+            {['Business details', 'Verify phone', 'PayBill setup', 'First membership plan'].map((label, index) => (
+              <div className={`step-item ${index === step ? 'active' : ''} ${index < step ? 'done' : ''}`} key={label}>
+                <span className="step-number">{index < step ? <Check size={15} /> : index + 1}</span>{label}
+              </div>
+            ))}
+          </div>
+        </aside>
+        <section className="onboarding-panel">
+          <div className="panel-topline"><span>Step {step + 1} of 4</span><span>Save and resume with your phone</span></div>
+          {step === 0 && <FormStep icon={<LayoutDashboard size={20} />} title="Tell us about your business" copy="Start with the details your members will recognise.">
+            <label htmlFor="business-name">Business name</label>
+            <input id="business-name" value={business} onChange={event => setBusiness(event.target.value)} placeholder="e.g. Northstar Fitness" />
+            <label htmlFor="business-phone">Phone number</label>
+            <input id="business-phone" value={phone} onChange={event => setPhone(event.target.value)} placeholder="e.g. 0712 345 678" inputMode="tel" />
+            {error && <p className="form-error" role="alert">{error}</p>}
+            <button className="primary-button wide" disabled={!business.trim() || !phone.trim() || loading} onClick={register}>{loading ? (registered ? 'Sending code...' : 'Creating account...') : registered ? <>Retry verification code <ArrowRight size={17} /></> : <>Create account <ArrowRight size={17} /></>}</button>
+          </FormStep>}
+          {step === 1 && <FormStep icon={<ShieldCheck size={20} />} title="Verify your phone" copy="We sent a one-time code. It expires in 5 minutes.">
+            <label htmlFor="onboarding-code">Verification code</label>
+            <input id="onboarding-code" value={code} onChange={event => setCode(event.target.value)} placeholder="6-digit code" inputMode="numeric" maxLength={6} autoFocus />
+            {error && <p className="form-error" role="alert">{error}</p>}
+            <button className="primary-button wide" disabled={code.length !== 6 || loading} onClick={verify}>{loading ? 'Verifying...' : 'Verify and continue'}</button>
+          </FormStep>}
+          {step === 2 && <FormStep icon={<CreditCard size={20} />} tone="orange" title="Connect your PayBill" copy="Credentials are validated and encrypted before saving.">
+            {fields.map(field => <label key={field.key} htmlFor={`setup-${field.key}`}>{field.label}<input id={`setup-${field.key}`} type={field.key === 'consumerSecret' || field.key === 'passkey' ? 'password' : 'text'} value={credentials[field.key]} onChange={event => setCredentials({ ...credentials, [field.key]: event.target.value })} placeholder={field.key === 'shortcode' ? 'e.g. 411234' : 'From Daraja'} /></label>)}
+            {error && <p className="form-error" role="alert">{error}</p>}
+            <button className="primary-button wide" disabled={Object.values(credentials).some(value => !value.trim()) || loading} onClick={setup}>{loading ? 'Validating...' : 'Validate and continue'}</button>
+          </FormStep>}
+          {step === 3 && <FormStep icon={<MessageSquareText size={20} />} tone="green" title="Create your first membership plan" copy="You can add more plans from the dashboard later.">
+            <label htmlFor="first-plan-name">Plan name</label>
+            <input id="first-plan-name" value={plan.name} onChange={event => setPlan({ ...plan, name: event.target.value })} />
+            <label htmlFor="first-plan-amount">Monthly price (KES)</label>
+            <input id="first-plan-amount" type="number" min="1" value={plan.amount} onChange={event => setPlan({ ...plan, amount: event.target.value })} />
+            {error && <p className="form-error" role="alert">{error}</p>}
+            <button className="primary-button wide" disabled={!plan.name.trim() || Number(plan.amount) <= 0 || loading} onClick={finish}>{loading ? 'Finishing setup...' : 'Finish setup'}</button>
+          </FormStep>}
+        </section>
+      </section>
+    </main>
+  )
+}
+
+function SignInPage() {
+  const navigate = useNavigate()
+  const [phone, setPhone] = useState('')
+  const [code, setCode] = useState('')
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  const request = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      await api.requestOtp(phone.trim())
+      setSent(true)
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'Unable to send code')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const verify = async () => {
+    setLoading(true)
+    setError('')
+    try {
+      await api.verifyOtp(phone.trim(), code)
+      const status = await api.getOnboardingStatus()
+      const step = onboardingStepFor(status)
+      if (step === null) navigate('/dashboard')
+      else navigate('/onboarding', { state: { step, phone: phone.trim() } })
+    } catch (actionError) {
+      setError(actionError instanceof Error ? actionError.message : 'Unable to verify code')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return <main className="app-frame">
+    <header className="app-header"><button className="brand brand-button" onClick={() => navigate('/')}><span className="brand-mark"><ShieldCheck size={17} /></span>NiaFlow</button><span className="secure-note">Passwordless sign in</span></header>
+    <section className="auth-layout">
+      <div className="auth-copy"><div className="eyebrow">Welcome back</div><h1>Your collections, right where you left them.</h1><p>Use the phone number linked to your NiaFlow workspace.</p></div>
+      <section className="onboarding-panel auth-panel"><h2>Sign in</h2><p className="muted">{sent ? 'Enter the code sent by SMS.' : 'No password to remember.'}</p>
+        <label htmlFor="signin-phone">Phone number</label><input id="signin-phone" value={phone} onChange={event => setPhone(event.target.value)} placeholder="e.g. 0712 345 678" disabled={sent} inputMode="tel" />
+        {sent && <><label htmlFor="signin-code">Verification code</label><input id="signin-code" value={code} onChange={event => setCode(event.target.value)} placeholder="6-digit code" inputMode="numeric" maxLength={6} /></>}
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <button className="primary-button wide" disabled={loading || !phone.trim() || (sent && code.length !== 6)} onClick={sent ? verify : request}>{loading ? 'Working...' : sent ? 'Open workspace' : 'Send verification code'}</button>
+        <button className="text-button" onClick={() => navigate('/')}>Back to NiaFlow</button>
+      </section>
     </section>
-    <section className="proof-strip"><span>Designed for the everyday rhythm of</span><b>GYMS</b><b>STUDIOS</b><b>CLUBS</b><b>MEMBERSHIP TEAMS</b></section>
-    <section className="how-section" id="how-it-works"><div className="section-heading"><div><div className="eyebrow">A quieter way to collect</div><h2>Less chasing.<br /><span>More showing up.</span></h2></div><p>From the first STK Push to the final receipt, keep your customers informed and your team in control.</p></div><div className="feature-grid"><Feature icon={<CreditCard size={21} />} title="Automatic collections" copy="Set a billing date once. NiaFlow sends the M-Pesa request and records every outcome." tone="cream" /><Feature icon={<MessageSquareText size={21} />} title="Helpful recovery" copy="When a payment fails, retries and clear SMS prompts keep the relationship moving." tone="orange" /><Feature icon={<LayoutDashboard size={21} />} title="One clear view" copy="See what is collected, what needs attention, and what is coming next." tone="green" /></div></section>
-    <section className="bottom-cta"><div><div className="eyebrow">Ready when you are</div><h2>Make recurring revenue<br /><em>feel recurring.</em></h2></div><button className="primary-button light" onClick={start}>Build your collection flow <ArrowRight size={17} /></button></section>
-    <footer><Brand /><span>Recurring M-Pesa collections for Kenya</span><span>© 2026 NiaFlow</span></footer>
   </main>
 }
 
-function Brand({ onClick }: { onClick?: () => void }) { return <button className="brand brand-button" onClick={onClick} aria-label="NiaFlow home"><span className="brand-mark"><Sparkles size={17} /></span><span>NiaFlow</span></button> }
-function Feature({ icon, title, copy, tone }: { icon: ReactNode; title: string; copy: string; tone: string }) { return <article className={`feature-card ${tone}`}><div className="feature-icon">{icon}</div><h3>{title}</h3><p>{copy}</p><span className="feature-arrow"><ArrowRight size={17} /></span></article> }
-function HeroVisual() { return <div className="hero-visual"><div className="visual-glow" /><div className="phone-card"><div className="phone-top"><span>NiaFlow</span><span className="phone-dot" /></div><div className="phone-balance"><span>Collected this month</span><strong>KES 184,500</strong><small>+12.8% <span>vs last month</span></small></div><div className="mini-chart"><i /><i /><i /><i /><i /><i /><i /></div><div className="phone-list"><Payment initials="NM" name="Northstar Fitness" detail="Membership payment" amount="+2,500" tone="coral" /><Payment initials="AK" name="Alex Kamau" detail="Payment confirmed" amount="+1,800" tone="blue" /></div></div><div className="floating-note note-top"><Check size={15} /><span>Payment recovered<br /><b>Grace period worked</b></span></div><div className="floating-note note-bottom"><MessageSquareText size={15} /><span>SMS sent<br /><b>Next billing: 04 Oct</b></span></div></div> }
-function Payment({ initials, name, detail, amount, tone }: { initials: string; name: string; detail: string; amount: string; tone: string }) { return <div><span className={`avatar ${tone}`}>{initials}</span><span><b>{name}</b><small>{detail}</small></span><strong>{amount}</strong></div> }
-
-function Onboarding({ businessName, setBusinessName, phoneNumber, setPhoneNumber, step, setStep, onHome, onDashboard }: { businessName: string; setBusinessName: (value: string) => void; phoneNumber: string; setPhoneNumber: (value: string) => void; step: number; setStep: (value: number) => void; onHome: () => void; onDashboard: () => void }) {
-  const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [code, setCode] = useState('')
-  const [credentials, setCredentials] = useState({ consumerKey: '', consumerSecret: '', shortcode: '', passkey: '' })
-  const [planName, setPlanName] = useState('Monthly membership')
-  const [planAmount, setPlanAmount] = useState('2500')
-  const register = async () => { setLoading(true); setError(''); try { await api.registerMerchant(businessName.trim(), phoneNumber.trim()); await api.requestOtp(phoneNumber.trim()); setStep(1) } catch (registrationError) { setError(registrationError instanceof Error ? registrationError.message : 'Unable to create your account') } finally { setLoading(false) } }
-  const verify = async () => { setLoading(true); setError(''); try { await api.verifyOtp(phoneNumber.trim(), code); setStep(2) } catch (verificationError) { setError(verificationError instanceof Error ? verificationError.message : 'Unable to verify your phone') } finally { setLoading(false) } }
-  const setup = async () => { setLoading(true); setError(''); try { await api.setupMpesa(credentials); setStep(3) } catch (setupError) { setError(setupError instanceof Error ? setupError.message : 'Unable to save PayBill setup') } finally { setLoading(false) } }
-  const finish = async () => { setLoading(true); setError(''); try { await api.createFirstPlan(planName.trim(), Number(planAmount)); onDashboard() } catch (planError) { setError(planError instanceof Error ? planError.message : 'Unable to create your plan') } finally { setLoading(false) } }
-  return <main className="app-frame"><header className="app-header"><Brand onClick={onHome} /><span className="secure-note"><ShieldCheck size={16} /> Secure setup</span></header><section className="onboarding-layout"><aside className="onboarding-rail"><div className="eyebrow">Merchant setup</div><h1>Get your collections moving.</h1><p>Four short steps to bring your recurring M-Pesa collections into one calm workspace.</p><div className="step-list">{steps.map((item, index) => <div className={`step-item ${index === step ? 'active' : ''} ${index < step ? 'done' : ''}`} key={item}><span className="step-number">{index < step ? <Check size={15} /> : index + 1}</span><span>{item}</span></div>)}</div><div className="help-box"><CircleHelp size={18} /><span>Save your progress at any step. Return with your phone number whenever you are ready.</span></div></aside><section className="onboarding-panel"><div className="panel-topline"><span>Step {step + 1} of 4</span><span>2 min estimated</span></div>{step === 0 && <FormStep icon={<LayoutDashboard size={20} />} title="Tell us about your business" copy="This is how your members will recognise payment requests."><label htmlFor="business-name">Business name</label><input id="business-name" value={businessName} onChange={event => setBusinessName(event.target.value)} placeholder="e.g. Northstar Fitness" autoFocus /><label htmlFor="phone-number">Phone number</label><input id="phone-number" value={phoneNumber} onChange={event => setPhoneNumber(event.target.value)} placeholder="e.g. 0712 345 678" inputMode="tel" /><label htmlFor="business-type">Business type</label><select id="business-type" defaultValue="gym"><option>Gym or fitness studio</option><option>Membership organisation</option><option>Online software subscription</option></select>{error && <p className="form-error">{error}</p>}<button className="primary-button wide" disabled={!businessName.trim() || !phoneNumber.trim() || loading} onClick={register}>{loading ? 'Creating account...' : <>Create account <ArrowRight size={17} /></>}</button></FormStep>}{step === 1 && <FormStep icon={<ShieldCheck size={20} />} title="Verify your phone" copy="We sent a one-time code to your phone. It expires in 5 minutes."><label htmlFor="otp-code">Verification code</label><input id="otp-code" value={code} onChange={event => setCode(event.target.value)} placeholder="6-digit code" inputMode="numeric" maxLength={6} autoFocus />{error && <p className="form-error">{error}</p>}<button className="primary-button wide" disabled={code.length !== 6 || loading} onClick={verify}>{loading ? 'Verifying...' : <>Verify and continue <ArrowRight size={17} /></>}</button><button className="text-button" onClick={() => setStep(0)}>Use a different number</button></FormStep>}{step === 2 && <FormStep icon={<CreditCard size={20} />} tone="orange" title="Connect your PayBill" copy="Your credentials stay encrypted. We use them only to collect on your behalf."><div className="setup-callout"><ShieldCheck size={18} /><div><strong>PayBill first</strong><span>We currently support PayBill STK Push. Till support is coming later.</span></div></div>{(['shortcode', 'consumerKey', 'consumerSecret', 'passkey'] as const).map(field => <label key={field} htmlFor={field}>{field === 'shortcode' ? 'PayBill number' : field === 'consumerKey' ? 'Consumer key' : field === 'consumerSecret' ? 'Consumer secret' : 'Passkey'}<input id={field} type={field === 'consumerSecret' || field === 'passkey' ? 'password' : 'text'} value={credentials[field]} onChange={event => setCredentials({ ...credentials, [field]: event.target.value })} placeholder={field === 'shortcode' ? 'e.g. 411234' : 'From Daraja'} /></label>)}{error && <p className="form-error">{error}</p>}<p className="field-help">Need Daraja credentials? <a href="https://developer.safaricom.co.ke/" target="_blank" rel="noreferrer">Open the Safaricom guide <ChevronRight size={14} /></a></p><button className="primary-button wide" disabled={Object.values(credentials).some(value => !value.trim()) || loading} onClick={setup}>{loading ? 'Validating...' : <>Validate and continue <ArrowRight size={17} /></>}</button></FormStep>}{step === 3 && <FormStep icon={<MessageSquareText size={20} />} tone="green" title="Create your first membership plan" copy="You can add more plans once your dashboard is ready."><label htmlFor="plan-name">Plan name</label><input id="plan-name" value={planName} onChange={event => setPlanName(event.target.value)} /><label htmlFor="plan-price">Monthly price <span className="input-suffix">KES</span></label><input id="plan-price" type="number" value={planAmount} onChange={event => setPlanAmount(event.target.value)} /><button className="primary-button wide" disabled={!planName.trim() || Number(planAmount) <= 0 || loading} onClick={finish}>{loading ? 'Finishing setup...' : <>Finish setup <Check size={17} /></>}</button></FormStep>}</section></section></main>
+function FormStep({ icon, tone = '', title, copy, children }: { icon: ReactNode; tone?: string; title: string; copy: string; children: ReactNode }) {
+  return <div className="form-section"><div className={`section-icon ${tone}`}>{icon}</div><h2>{title}</h2><p className="muted">{copy}</p>{children}</div>
 }
-function SignIn({ phoneNumber, setPhoneNumber, error, loading, onHome, onRequestOtp, onSubmit }: { phoneNumber: string; setPhoneNumber: (value: string) => void; error: string; loading: boolean; onHome: () => void; onRequestOtp: (phone: string) => Promise<boolean>; onSubmit: (phone: string, code: string) => Promise<void> }) {
-  const [code, setCode] = useState('')
-  const [sent, setSent] = useState(false)
-  const requestCode = async () => { if (await onRequestOtp(phoneNumber.trim())) setSent(true) }
-  return <main className="app-frame"><header className="app-header"><Brand onClick={onHome} /><span className="secure-note"><ShieldCheck size={16} /> Passwordless sign in</span></header><section className="auth-layout"><div className="auth-copy"><div className="eyebrow">Welcome back</div><h1>Your collections, right where you left them.</h1><p>Sign in with the phone number linked to your NiaFlow account. We will send a one-time code by SMS.</p></div><section className="onboarding-panel auth-panel"><div className="section-icon"><ShieldCheck size={20} /></div><h2>Sign in to NiaFlow</h2><p className="muted">No password to remember. Your session stays active for 24 hours.</p><label htmlFor="signin-phone">Phone number</label><input id="signin-phone" value={phoneNumber} onChange={event => setPhoneNumber(event.target.value)} placeholder="e.g. 0712 345 678" inputMode="tel" disabled={sent} />{sent && <><label htmlFor="signin-code">Verification code</label><input id="signin-code" value={code} onChange={event => setCode(event.target.value)} placeholder="6-digit code" inputMode="numeric" maxLength={6} autoFocus /><p className="field-help">Code sent by SMS. It expires in 5 minutes.</p></>}{error && <p className="form-error">{error}</p>}{!sent ? <button className="primary-button wide" disabled={!phoneNumber.trim() || loading} onClick={requestCode}>{loading ? 'Sending code...' : <>Send verification code <ArrowRight size={17} /></>}</button> : <button className="primary-button wide" disabled={code.length !== 6 || loading} onClick={() => onSubmit(phoneNumber.trim(), code)}>{loading ? 'Verifying...' : <>Open dashboard <ArrowRight size={17} /></>}</button>}<button className="text-button" onClick={() => { setSent(false); setCode('') }}>{sent ? 'Use a different number' : 'Back to NiaFlow'}</button></section></section></main>
-}
-
-function FormStep({ icon, tone = '', title, copy, children }: { icon: ReactNode; tone?: string; title: string; copy: string; children: ReactNode }) { return <div className="form-section"><div className={`section-icon ${tone}`}>{icon}</div><h2>{title}</h2><p className="muted">{copy}</p>{children}</div> }
-
-function Dashboard({ businessName, onHome }: { businessName: string; onHome: () => void }) { return <main className="dashboard-frame"><aside className="dashboard-sidebar"><Brand onClick={onHome} /><div className="sidebar-label">Workspace</div><button className="side-link active"><LayoutDashboard size={17} /> Overview</button><button className="side-link"><CreditCard size={17} /> Payments <span>12</span></button><button className="side-link"><MessageSquareText size={17} /> Customers</button><div className="sidebar-bottom"><button className="side-link"><CircleHelp size={17} /> Help centre</button><div className="merchant-chip"><span className="avatar coral">{businessName.slice(0, 2).toUpperCase()}</span><span><b>{businessName}</b><small>Owner account</small></span></div></div></aside><section className="dashboard-content"><header className="dashboard-header"><div><div className="eyebrow">Wednesday, 30 September 2026</div><h1>Good morning, {businessName.split(' ')[0]}.</h1></div><button className="primary-button">Add customer <ArrowRight size={16} /></button></header><div className="setup-banner"><div className="setup-banner-icon"><Check size={20} /></div><div><strong>Your collection setup is ready</strong><span>PayBill connected · Monthly membership plan active</span></div><button className="quiet-link">View setup <ChevronRight size={16} /></button></div><div className="metrics-grid"><Metric label="Collected this month" value="KES 184,500" change="+12.8%" /><Metric label="Active members" value="74" change="+6 this month" /><Metric label="Needs attention" value="3" change="2 retrying · 1 past due" alert /></div><div className="dashboard-grid"><section className="activity-panel"><div className="panel-heading"><div><div className="eyebrow">Latest activity</div><h2>Payments</h2></div><button className="quiet-link">View all <ChevronRight size={15} /></button></div><Activity initials="NM" name="Naomi Muthoni" detail="Monthly membership · Today, 10:42" amount="+ KES 2,500" tone="coral" /><Activity initials="AK" name="Alex Kamau" detail="Monthly membership · Today, 09:18" amount="+ KES 2,500" tone="blue" /><Activity initials="PW" name="Peter Wanjiku" detail="Retrying · Yesterday, 16:20" amount="Needs attention" tone="gold" warning /></section><section className="next-panel"><div className="eyebrow">Coming up</div><h2>Next billing run</h2><strong className="next-date">04 <span>OCT</span></strong><p>18 members · KES 45,000 expected</p><div className="progress-bar"><span /></div><small>78% of members have a saved number</small></section></div></section></main> }
-function Activity({ initials, name, detail, amount, tone, warning = false }: { initials: string; name: string; detail: string; amount: string; tone: string; warning?: boolean }) { return <div className="activity-row"><span className={`avatar ${tone}`}>{initials}</span><span><b>{name}</b><small>{detail}</small></span><strong className={warning ? 'warning' : 'success'}>{amount}</strong></div> }
-function Metric({ label, value, change, alert = false }: { label: string; value: string; change: string; alert?: boolean }) { return <div className={`metric-card ${alert ? 'alert' : ''}`}><span>{label}</span><strong>{value}</strong><small>{change}</small></div> }
 
 export default App
