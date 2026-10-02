@@ -1,237 +1,167 @@
-# M-Pesa Recurring Billing Engine
-https://mpesa-billing-engine-v1.onrender.com/api
+# NiaFlow M-Pesa Billing Engine
 
-A NestJS-based recurring billing service for merchants that sell subscription plans and charge customers through Safaricom M-Pesa STK Push.
+NiaFlow helps merchants manage recurring plans and collect them through Safaricom Daraja STK Push. The merchant dashboard is in `web/`; the NestJS API and background workers are in `src/`.
 
-The project is designed around explicit billing state, tenant isolation, and operational reliability: PostgreSQL stores the source of truth, Prisma handles typed access, Redis caches Daraja tokens and supports the queue layer, and BullMQ drives retries for webhook delivery and subscription processing.
+- Production API: <https://mpesa-billing-engine-v1.onrender.com/api>
+- API reference (non-production only): `/api/docs`
+- Browser app: deployed separately from the API
 
-## Why this stack
+## Product and payment model
 
-- NestJS: modular architecture, dependency injection, structured service boundaries, API-first development
-- PostgreSQL: ACID guarantees for money-adjacent writes and auditability
-- Prisma 7: strong typing, explicit database handling, adapter-based access patterns
-- Redis + BullMQ: retry/backoff semantics, background job processing, and queue-based delivery
-- Daraja M-Pesa: the live payment rail the engine integrates with in sandbox mode
-- Argon2: hashed merchant API keys instead of storing raw secrets
-- HMAC-SHA256: merchant webhook signing for tamper-evident delivery
+- A merchant creates whole-KES weekly or monthly plans and subscribes members to them.
+- Members pay only the plan price. The chosen product direction is a separate predictable monthly merchant fee with a clear SMS allowance; fee collection and final fee amounts are not implemented yet. Do not add the platform fee to a member's plan price.
+- Daraja credentials are required per merchant in production and encrypted at rest. Shared environment credentials are for local development and tests only.
+- Collection is initiated by an STK Push. A confirmed callback updates the recorded payment attempt and subscription.
+- A payment attempt has a unique billing-cycle idempotency key. Duplicate callbacks do not apply a second state transition. Cancellation blocks later charge attempts and a late successful callback cannot reactivate a cancelled subscription.
+- Clear Daraja rejections enter the 1, 3, and 7 day retry schedule. If the STK request may have reached Daraja but its response is unknown, the attempt stays `PENDING_CONFIRMATION` and automatic charging waits for reconciliation; this avoids prompting a member twice.
 
-## Core design decisions
+## Architecture and request flow
 
-- Money is stored as `Decimal(12,2)`; values are never treated as JavaScript floats.
-- Every charge has a unique idempotency key derived from the subscription and billing cycle, enforcing duplicate-charge protection structurally rather than as a fragile best-effort check.
-- Billing is prepaid: a merchant is charged before the service period begins.
-- The retry ladder is explicit: 1 / 3 / 7 days, then `PAST_DUE`. This keeps dunning visible in the data model rather than hiding it in queue internals.
-- Cross-merchant access returns 404 instead of 403 to avoid confirming that a resource exists to unauthorized users.
-- Webhooks are optional. If a merchant has no webhook URL or secret, the billing flow still works; notifications simply do not fire.
+```mermaid
+flowchart LR
+  Merchant[Merchant browser] -->|HTTP API + session or API key| API[NestJS API]
+  API --> DB[(PostgreSQL / Prisma)]
+  API --> Redis[(Redis)]
+  Redis --> Billing[Billing scan and charge workers]
+  Billing --> Daraja[Safaricom Daraja STK Push]
+  Daraja -->|callback| API
+  API --> WebhookQueue[BullMQ webhook queue]
+  WebhookQueue --> MerchantHook[Merchant HTTPS endpoint]
+  API --> Cradle[Cradle SMS]
+```
 
-## Architecture overview
+1. A merchant registers and receives an API key once. The dashboard uses passwordless OTP sign-in and an HttpOnly session cookie.
+2. The merchant completes PayBill setup with their own Daraja consumer key, consumer secret, shortcode, and passkey. The API encrypts credentials before storage.
+3. The merchant creates a weekly or monthly plan and a subscription. The subscription is associated with that merchant and plan.
+4. A BullMQ scheduler scans for subscriptions due to be charged every five minutes. Charge workers write the attempt before sending an STK request.
+5. Daraja calls the public callback route. The callback token is checked; callbacks that arrive before checkout ID persistence are buffered in `DarajaCallback` and replayed.
+6. Merchant event deliveries are stored and queued separately from billing. Delivery signs the JSON body with HMAC-SHA256, retries failures, requires HTTPS, resolves and checks the destination for every attempt, pins the connection to the checked IP, and does not follow redirects.
 
-- Merchants: registered users with hashed API keys and optional webhook configuration
-- Plans: merchant-owned recurring pricing plans with interval and amount metadata
-- Subscriptions: customer subscriptions tied to a plan and merchant
-- Payment attempts: recorded per charge attempt with `attemptNumber`, `status`, and idempotency tracking
-- Webhook deliveries: queued outbound merchant notifications with retry/backoff handling
+PostgreSQL is the system of record. Redis supports BullMQ and Daraja access-token caching. Token cache keys are isolated by the merchant credential fingerprint. The dashboard's active-member metric counts active subscriptions among the 10 most recently created; subscription browsing is paginated at 20 rows. “Collected this period” means successful payment attempts in the current Nairobi calendar month. Receipt history includes every attempt.
 
-## API surface
+### Private merchant webhook endpoints
 
-All routes are mounted under `/api` in the application bootstrap.
+Private webhook destinations are supported only when the API host has a real network route to the merchant network. Configure `WEBHOOK_ALLOWED_PRIVATE_CIDRS` with the exact approved destination CIDRs and `WEBHOOK_ALLOWED_PORTS` with required ports. The default port is 443; private address delivery is denied unless its CIDR is allowlisted. These settings enforce destination policy but do not establish VPN, peering, or private links. Loopback, link-local, metadata, multicast, and unspecified destinations remain blocked.
 
-### Merchant routes
+## Repository layout
 
-- `POST /api/merchants` — public merchant registration; returns the API key and webhook secret once
-- `POST /api/auth/otp/request` — send a passwordless login code to a registered merchant phone
-- `POST /api/auth/otp/verify` — verify the code and create an HttpOnly browser session
-- `POST /api/auth/logout` — invalidate the current browser session
-- `POST /api/merchants/onboarding/start` — start guided onboarding and receive the next required step
-- `GET /api/merchants/me/onboarding` — resume guided onboarding progress
-- `POST /api/merchants/me/onboarding/plan` — create the first membership plan after PayBill setup
-- `POST /api/merchants/me/mpesa-setup` — validate and save encrypted merchant PayBill Daraja credentials
-- `GET /api/merchants/me/mpesa-setup` — resume setup by checking the merchant's M-Pesa setup status
-- `PATCH /api/merchants/me` — update the authenticated merchant
-- `POST /api/merchants/me/rotate-webhook-secret` — rotate the merchant webhook secret
+```text
+src/
+  auth/          OTP login and server-side session management
+  billing/       recurring billing scheduler and BullMQ workers
+  common/        guards, decorators, DTO utilities, and phone normalization
+  merchants/     registration, onboarding, analytics, and Daraja credentials
+  notifications/ Cradle SMS and signed merchant webhook delivery
+  payments/      Daraja integration, payment attempts, and callbacks
+  plans/         merchant-owned billing plans
+  subscriptions/ subscription management and receipt history
+  prisma/        Prisma client and database service
+web/src/
+  pages/         public pages and merchant dashboard routes
+  components/    shared UI components and page states
+  layouts/       public and authenticated application shells
+  api.ts         browser API client and response types
+prisma/
+  schema.prisma  data model
+  migrations/    committed database migrations
+```
 
-### Plan routes
+## Run locally
 
-- `POST /api/plans`
-- `GET /api/plans`
-- `GET /api/plans/:planId`
-- `PATCH /api/plans/:planId`
-- `DELETE /api/plans/:planId`
-
-### Subscription routes
-
-- `POST /api/subscriptions`
-- `GET /api/subscriptions`
-- `GET /api/subscriptions/:subscriptionId`
-- `PATCH /api/subscriptions/:subscriptionId/cancel`
-
-### Inbound Daraja callback
-
-- `POST /api/webhooks/daraja/callback/:token` — public callback endpoint protected by the configured callback token
-
-### Authentication and security
-
-- Every protected endpoint requires an `x-api-key` header.
-- The global API key guard enforces merchant ownership and rejects invalid or missing credentials.
-- Swagger is enabled when `NODE_ENV !== 'production'` at `http://localhost:3000/api/docs`.
-
-## Getting started
-
-### 1) Install dependencies
+Requirements: Node.js 22 or later, npm, Docker, and a Daraja sandbox account if you want to exercise STK Push.
 
 ```bash
 git clone <your-repo-url>
 cd billing-engine
 npm install
-```
-
-### 2) Start the supporting services
-
-The project expects PostgreSQL and Redis to be available locally or through Docker.
-
-```bash
-docker compose up -d
-```
-
-### 3) Configure environment variables
-
-Create a `.env` file based on the example:
-
-```bash
 cp .env.example .env
+docker compose up -d postgres redis
+npx prisma generate
+npx prisma migrate dev
+npm run start:dev
 ```
 
-Example values:
+In another terminal, run the browser app:
 
-```env
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/billing-engine
-NODE_ENV=development
-PORT=3000
-REDIS_URL=redis://localhost:6379
-
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_DB=billing-engine
-
-CONSUMER_KEY=your_daraja_consumer_key
-CONSUMER_SECRET=your_daraja_consumer_secret
-SHORT_CODE=174379
-PASSKEY=your_daraja_passkey
-MPESA_TOKEN_URL=https://sandbox.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials
-STK_PUSH_URL=https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest
-MPESA_CALLBACK_URL=https://your-ngrok-url.ngrok-free.app/api/webhooks/daraja/callback
-DARAJA_CALLBACK_TOKEN=replace-with-a-secret-token
-MPESA_CREDENTIAL_ENCRYPTION_KEY=base64-encoded-32-byte-key
+```bash
+cd web
+npm install
+npm run dev
 ```
 
-Each merchant must complete PayBill Daraja setup before collecting payments. Generate the encryption key with:
+The browser defaults to `http://localhost:3000/api`. Set `VITE_API_URL` in the web build environment when the API uses a different base URL. Set `MPESA_CALLBACK_URL` to a public HTTPS callback URL (for local development, use a tunnel) in the form `/api/webhooks/daraja/callback/<DARAJA_CALLBACK_TOKEN>`; configure the same callback token in the API environment.
+
+Generate a local 32-byte credential encryption key with:
 
 ```bash
 openssl rand -base64 32
 ```
 
-The platform stores the consumer key, consumer secret, and passkey encrypted. Merchants only need to provide their own Daraja credentials once; the callback URL remains managed by the platform.
+Apply committed migrations in deployment environments with `npx prisma migrate deploy`. Database migration and API deployment are separate operational steps; merging code does not deploy the API or migrate its database.
 
-### 4) Initialize the database
+## Environment variables
 
-```bash
-npx prisma generate
-npx prisma migrate dev
-```
+`.env.example` lists runtime variables and safe local defaults. The important production requirements are:
 
-### 5) Run the app
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | PostgreSQL connection string |
+| `REDIS_URL` | Redis connection used by BullMQ and token caching |
+| `DARAJA_CALLBACK_TOKEN` | Secret path token for the Daraja callback endpoint |
+| `MPESA_CALLBACK_URL` | Public callback base URL configured for STK requests |
+| `MPESA_TOKEN_URL`, `STK_PUSH_URL` | Daraja OAuth and STK endpoints |
+| `MPESA_CREDENTIAL_ENCRYPTION_KEY` | Base64-encoded 32-byte key for merchant credentials |
+| `CONSUMER_KEY`, `CONSUMER_SECRET`, `SHORT_CODE`, `PASSKEY` | Local/test fallback credentials only; production charges require merchant-provided credentials |
+| `CRADLE_URL`, `CRADLE_TOKEN` | Cradle SMS provider configuration |
+| `WEBHOOK_ALLOWED_PRIVATE_CIDRS`, `WEBHOOK_ALLOWED_PORTS` | Explicit private webhook destination policy |
+| `VITE_API_URL` | Browser build-time API base URL, configured in `web/` |
 
-Development mode:
+Use a secret manager for production secrets. Do not commit `.env` or live credentials.
 
-```bash
-npm run start:dev
-```
+## API overview
 
-Production build:
+All API routes are prefixed with `/api`. Protected routes accept either an `x-api-key` header or a valid dashboard session cookie. Merchant-owned lookups are scoped to the authenticated merchant.
 
-```bash
-npm run build
-npm run start:prod
-```
+| Route | Purpose |
+| --- | --- |
+| `POST /merchants` or `POST /merchants/onboarding/start` | Register a merchant; save the returned API key |
+| `POST /auth/otp/request`, `POST /auth/otp/verify`, `POST /auth/logout` | Dashboard passwordless sign-in |
+| `GET /merchants/dashboard`, `GET /merchants/analytics` | Dashboard counts and analytics |
+| `/merchants/me/onboarding`, `/merchants/me/mpesa-setup` | Resume onboarding and set up Daraja credentials |
+| `/plans` | Create, list, update, and delete merchant plans |
+| `POST /subscriptions` | Create a subscription |
+| `GET /subscriptions?page=1` | Fetch subscriptions in 20-row pages; response includes totals and page metadata |
+| `GET /subscriptions/:id/receipts` | Get all payment attempts for a subscription |
+| `GET /subscriptions/retry-queue` | View subscriptions awaiting collection recovery |
+| `POST /subscriptions/:id/pay-now`, `POST /subscriptions/:id/retry`, `PATCH /subscriptions/:id/cancel` | Request payment, retry, or cancel |
+| `POST /webhooks/daraja/callback/:token` | Receive Daraja STK callbacks |
 
-Swagger documentation:
+The exact DTOs and response schemas are visible in Swagger outside production at `/api/docs`.
 
-```text
-http://localhost:3000/api/docs
-```
+## Webhook consumer notes
 
-## Testing
+Webhook payloads are JSON and include an `X-Webhook-Signature` header containing the lowercase hex HMAC-SHA256 of the exact serialized body. Verify with the merchant webhook secret using a constant-time comparison. Respond with a 2xx status promptly; failed or non-2xx deliveries are retried by BullMQ. Webhook endpoint URLs must use HTTPS. Destinations on private networks require the operator to configure the approved CIDR and port and provide network routing.
 
-The project includes a broad regression suite focused on the failure modes that actually caused issues during development.
+## Development checks
 
 ```bash
 npm test -- --runInBand
+npm run build
+npm run lint
+npm run build --prefix web
+npm test --prefix web
 ```
 
-Current verified status from the repository:
+Lint currently reports three pre-existing unused imports in `src/auth/auth.service.spec.ts`.
 
-- 16 test suites passing
-- 71 tests passing
+## Operational cautions
 
-### High-priority coverage included
-
-- `src/common/utils/phone.util.spec.ts` — normalizes valid Kenyan phone numbers and rejects invalid input
-- `src/common/guards/api-key/api-key.guard.spec.ts` — verifies auth success, missing/invalid keys, and public-route bypass
-- `src/payments/payments.service.spec.ts` — covers retry ladder behavior, attempt counting, and reconciliation logic
-- `src/notifications/webhook-delivery.processor.spec.ts` — validates HMAC generation and automatic retry behavior
-- `src/notifications/notifications.service.spec.ts` — verifies merchant notification creation and no-op behavior when the merchant is not configured
-- controller and service specs for merchants, plans, subscriptions, and Daraja integration
-
-## Real bugs found and fixed during development
-
-This project was intentionally test-driven around failure cases, not just happy paths. Some examples:
-
-- Authentication bypass caused by an async predicate being used inside `Array.prototype.find()`, which does not await async callbacks.
-- Cross-tenant data corruption caused by matching updates too broadly rather than by the specific Daraja checkout identity.
-- Retry counting and dunning logic reset incorrectly because attempt numbers were derived from a lifetime count instead of the current retry window.
-- Reconciliation paths updated internal state without notifying merchants, creating a silent business failure path.
-
-Those behaviors are now guarded by regression tests so they are harder to reintroduce.
-
-## Database schema
-
-The application uses the following Prisma models:
-
-- `Merchant`
-- `Plan`
-- `Subscription`
-- `PaymentAttempt`
-- `WebhookDelivery`
-
-The schema is defined in `prisma/schema.prisma` and includes a `Decimal(12,2)` amount model, status enums, and webhook delivery tracking.
-
-## Operational notes
-
-- The app uses `ValidationPipe` with `whitelist` and `forbidNonWhitelisted` enabled.
-- The API key guard is globally registered in the application module.
-- The webhook callback route is public by design and is protected with a token check.
-- The project expects Redis to be running for BullMQ and Daraja token caching.
-- Swagger docs are exposed only in non-production environments.
-
-## Roadmap
-
-- Sprint 1: merchants, plans, and subscriptions CRUD
-- Sprint 2: Daraja sandbox integration and STK flow validation
-- Sprint 3: BullMQ scheduler and retry/dunning ladder
-- Sprint 4: signed merchant webhooks
-- Sprint 5: regression-focused test coverage and operational hardening
-- Sprint 6: broader self-service and merchant tooling
+- Do not automatically resend a `PENDING_CONFIRMATION` STK request. Reconcile with Daraja before deciding whether another charge is safe.
+- Keep PostgreSQL backups and Redis availability monitored. Redis outages affect scheduled and queued work.
+- The callback token is a shared platform callback secret, while Daraja payment credentials are merchant-specific.
+- Deploy the API and frontend independently. Apply database migrations deliberately before relying on code that requires them.
+- Customer self-service portal links, reminder schedules, and customer-facing pricing disclosure are planned product work and are not part of the current API flow.
 
 ## License
 
-This repository is currently marked as `UNLICENSED` in `package.json`. If you intend to publish or share the project publicly, update the license metadata and add a proper `LICENSE` file before release.
-
-## Support and development notes
-
-If you are running this in a real environment, ensure:
-
-- PostgreSQL is reachable from the app container or host
-- Redis is available on the configured URL
-- Daraja sandbox credentials are valid
-- your callback URL is public and matches the configured token
-- webhook secrets are rotated and stored securely outside source control
+The package is marked `UNLICENSED`. Set a license and add a `LICENSE` file before distributing the project publicly.
