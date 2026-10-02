@@ -14,6 +14,7 @@ NiaFlow helps merchants manage recurring plans and collect them through Safarico
 - Collection is initiated by an STK Push. A confirmed callback updates the recorded payment attempt and subscription.
 - A payment attempt has a unique billing-cycle idempotency key. Duplicate callbacks do not apply a second state transition. Cancellation blocks later charge attempts and a late successful callback cannot reactivate a cancelled subscription.
 - Successful callbacks are checked against the attempted amount and member phone whenever Daraja supplies those fields. A mismatch stays pending confirmation rather than being counted as collected. Safaricom receipt numbers and transaction dates are retained in receipt history when provided.
+- Merchants can text members a private portal link. Only its SHA-256 token hash is stored, and the link expires after 24 hours. Members can see their plan, next scheduled charge, and latest 20 attempts, or request an eligible payment themselves.
 - Clear Daraja rejections enter the 1, 3, and 7 day retry schedule. If the STK request may have reached Daraja but its response is unknown, the attempt stays `PENDING_CONFIRMATION` and automatic charging waits for reconciliation; this avoids prompting a member twice.
 
 ## Architecture and request flow
@@ -28,7 +29,8 @@ flowchart LR
   Daraja -->|callback| API
   API --> WebhookQueue[BullMQ webhook queue]
   WebhookQueue --> MerchantHook[Merchant HTTPS endpoint]
-  API --> Cradle[Cradle SMS]
+  API --> SMSQueue[BullMQ customer SMS queue]
+  SMSQueue --> Cradle[Cradle SMS]
 ```
 
 1. A merchant registers with a phone number and password; email is optional and currently used only as contact information. Merchant login is independent of the SMS provider. Passwords are stored as Argon2id hashes, sign-in creates an HttpOnly session cookie, and repeated failures are throttled in Redis. Forgotten passwords use support-assisted recovery; email self-service reset is not enabled. Existing merchants can set an initial password from Settings while authenticated. Merchants who have lost all active sessions and API keys must contact support to regain access. New API keys include an indexed public ID, so each request looks up and verifies one key hash. Older keys remain supported temporarily; rotate them from Settings to move to indexed authentication.
@@ -36,7 +38,8 @@ flowchart LR
 3. The merchant creates a weekly or monthly plan and a subscription. The subscription is associated with that merchant and plan.
 4. A BullMQ scheduler scans for subscriptions due to be charged every five minutes. Charge workers write the attempt before sending an STK request.
 5. Daraja calls the public callback route. The callback token is checked; callbacks that arrive before checkout ID persistence are buffered in `DarajaCallback` and replayed.
-6. Merchant event deliveries are stored and queued separately from billing. Delivery signs the JSON body with HMAC-SHA256, retries failures, requires HTTPS, resolves and checks the destination for every attempt, pins the connection to the checked IP, and does not follow redirects.
+6. A merchant can text a member a private link to their subscription and payment activity. Member payment requests use the same payment-attempt and duplicate-charge protections as merchant requests.
+7. Merchant event deliveries and customer SMS are queued separately from billing. Webhook delivery signs the JSON body with HMAC-SHA256, retries failures, requires HTTPS, resolves and checks the destination for every attempt, pins the connection to the checked IP, and does not follow redirects. SMS delivery retries transient provider failures.
 
 PostgreSQL is the system of record. Redis supports BullMQ and Daraja access-token caching. Token cache keys are isolated by the merchant credential fingerprint. The dashboard's active-member metric counts active subscriptions among the 10 most recently created; subscription browsing is paginated at 20 rows. “Collected this period” means successful payment attempts in the current Nairobi calendar month. Receipt history includes every attempt.
 
@@ -58,6 +61,7 @@ src/
   payments/      Daraja integration, payment attempts, and callbacks
   plans/         merchant-owned billing plans
   subscriptions/ subscription management and receipt history
+                 expiring member portal links
   prisma/        Prisma client and database service
 web/src/
   pages/         public pages and merchant dashboard routes
@@ -137,6 +141,9 @@ All API routes are prefixed with `/api`. Protected routes accept either an `x-ap
 | `POST /subscriptions` | Create a subscription |
 | `GET /subscriptions?page=1` | Fetch subscriptions in 20-row pages; response includes totals and page metadata |
 | `GET /subscriptions/:id/receipts` | Get all payment attempts for a subscription |
+| `POST /subscriptions/:id/member-link` | Queue an SMS with a private 24-hour member portal link |
+| `GET /customer/portal/:token` | View subscription details and the latest 20 payment attempts |
+| `POST /customer/portal/:token/pay-now` | Request an eligible payment through the normal payment lifecycle |
 | `GET /subscriptions/retry-queue` | View subscriptions awaiting collection recovery |
 | `POST /subscriptions/:id/pay-now`, `POST /subscriptions/:id/retry`, `PATCH /subscriptions/:id/cancel` | Request payment, retry, or cancel |
 | `POST /webhooks/daraja/callback/:token` | Receive Daraja STK callbacks |
@@ -166,7 +173,7 @@ Lint currently reports three pre-existing unused imports in `src/auth/auth.servi
 - Keep PostgreSQL backups and Redis availability monitored. Redis outages affect scheduled and queued work.
 - The callback token is a shared platform callback secret, while Daraja payment credentials are merchant-specific.
 - Deploy the API and frontend independently. Apply database migrations deliberately before relying on code that requires them.
-- Customer self-service portal links, reminder schedules, and customer-facing pricing disclosure are planned product work and are not part of the current API flow.
+- Automated due-date reminders, overdue notices, payment-result SMS, and customer-facing pricing disclosure remain planned product work. Merchants can send the member portal link from the subscription list; SMS delivery uses the configured Cradle provider and Redis-backed queue.
 
 ## License
 

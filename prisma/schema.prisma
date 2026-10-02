@@ -101,6 +101,7 @@ model Subscription {
   plan Plan @relation(fields: [planId], references: [id])
 
   paymentAttempts PaymentAttempt[]
+  memberPortalTokens MemberPortalToken[]
 
   @@index([merchantId])
   @@index([customerPhone])
@@ -134,6 +135,19 @@ model DarajaCallback {
   processedAt DateTime?
 
   @@index([processedAt, receivedAt])
+}
+
+model MemberPortalToken {
+  id String @id @default(uuid())
+  tokenHash String @unique
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime @default(now())
+
+  subscriptionId String
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId, expiresAt])
 }
 
 model WebhookDelivery {

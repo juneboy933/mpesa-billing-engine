@@ -1,5 +1,5 @@
 import { type FormEvent, useEffect, useState } from 'react'
-import { ArrowRight, CreditCard, FileText, RotateCcw } from 'lucide-react'
+import { ArrowRight, CreditCard, FileText, Link2, RotateCcw } from 'lucide-react'
 import { api, type Plan, type Subscription, type SubscriptionReceipts } from '../api'
 import { PageHeader } from '../components/PageHeader'
 import { EmptyState, ErrorState, LoadingState } from '../components/States'
@@ -15,6 +15,7 @@ export function SubscriptionsPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [notice, setNotice] = useState('')
   const [receiptsFor, setReceiptsFor] = useState<string | null>(null)
   const [receipts, setReceipts] = useState<SubscriptionReceipts | null>(null)
   const [receiptError, setReceiptError] = useState('')
@@ -54,10 +55,12 @@ export function SubscriptionsPage() {
     }
   }
 
-  const action = async (operation: () => Promise<unknown>) => {
+  const action = async (operation: () => Promise<unknown>, successMessage?: string) => {
     setError('')
+    setNotice('')
     try {
       await operation()
+      if (successMessage) setNotice(successMessage)
       await load()
     } catch (actionError) {
       setError(actionError instanceof Error ? actionError.message : 'Unable to update subscription')
@@ -90,6 +93,7 @@ export function SubscriptionsPage() {
   return <div className="page-content">
     <PageHeader eyebrow="Subscriptions" title="Members and billing status" copy="Create subscriptions, review receipts, and keep payment state visible." />
     {error && <ErrorState message={error} />}
+    {notice && <div className="member-link-notice" role="status">{notice}</div>}
     <div className="content-grid">
       <section className="data-panel">
         <div className="panel-title"><div><div className="eyebrow">Member list · Page {page} of {totalPages}</div><h2>{totalSubscriptions} subscriptions</h2></div></div>
@@ -101,6 +105,7 @@ export function SubscriptionsPage() {
               <span><b>{subscription.customerPhone}</b><small>{subscription.plan?.name ?? 'Plan'} · {subscription.status.replace('_', ' ')}</small></span>
               <span className="row-actions">
                 <button className="icon-button" title="View receipts" aria-label={`View receipts for ${subscription.customerPhone}`} onClick={() => void toggleReceipts(subscription)}><FileText size={15} /></button>
+                <button className="icon-button" title="Text member portal link" aria-label={`Text member portal link to ${subscription.customerPhone}`} onClick={() => void action(() => api.sendMemberPortalLink(subscription.id), 'Member link queued by SMS. It expires after 24 hours.')}><Link2 size={15} /></button>
                 {subscription.status === 'RETRYING' || subscription.status === 'PAST_DUE' ? <button className="icon-button" title="Retry payment" aria-label={`Retry payment for ${subscription.customerPhone}`} onClick={() => void action(() => api.triggerRetry(subscription.id))}><RotateCcw size={15} /></button> : <button className="icon-button" title="Pay now" aria-label={`Pay now for ${subscription.customerPhone}`} onClick={() => void action(() => api.payNow(subscription.id))}><CreditCard size={15} /></button>}
                 <strong>{new Date(subscription.nextBillingDate).toLocaleDateString()}</strong>
               </span>

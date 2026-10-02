@@ -51,6 +51,16 @@ export type Subscription = { id: string; customerPhone: string; status: string; 
 export type SubscriptionManagement = { totalSubscriptions: number; activeSubscriptions: number; page: number; pageSize: number; totalPages: number; subscriptions: Subscription[] }
 export type Receipt = { id: string; status: string; amount: number; createdAt: string; resolvedAt: string | null; receiptNumber: string | null; transactionDate: string | null }
 export type SubscriptionReceipts = { subscriptionId: string; customerPhone: string; currentPlan: string; totalAttempts: number; receipts: Receipt[] }
+export type MemberPortal = {
+  businessName: string
+  subscriptionId: string
+  status: string
+  nextPaymentAt: string
+  plan: { name: string; amount: number; interval: 'WEEKLY' | 'MONTHLY' }
+  recentAttempts: { id: string; status: string; amount: number; attemptedAt: string; resolvedAt: string | null; receiptNumber: string | null; transactionDate: string | null }[]
+  expiresAt: string
+  canPayNow: boolean
+}
 
 export const api = {
   registerMerchant: (name: string, phoneNumber: string, password: string, email?: string) =>
@@ -70,6 +80,9 @@ export const api = {
   getSubscriptions: (page = 1) => request<SubscriptionManagement>(`/subscriptions/management?page=${page}`).then(data => data.subscriptions),
   getSubscriptionManagement: (page = 1) => request<SubscriptionManagement>(`/subscriptions/management?page=${page}`),
   createSubscription: (planId: string, customerPhone: string) => request('/subscriptions', { method: 'POST', body: { planId, customerPhone } }),
+  sendMemberPortalLink: (id: string) => request<{ message: string; expiresAt: string }>(`/subscriptions/${id}/member-link`, { method: 'POST' }),
+  getMemberPortal: (token: string) => request<MemberPortal>(`/customer/portal/${encodeURIComponent(token)}`),
+  memberPayNow: (token: string) => request<{ message: string; subscriptionId: string }>(`/customer/portal/${encodeURIComponent(token)}/pay-now`, { method: 'POST' }),
   getRetryQueue: () => request<{ total: number; retrying: number; pastDue: number; subscriptions: Subscription[] }>('/subscriptions/retry-queue'),
   getReceipts: (subscriptionId: string) => request<SubscriptionReceipts>(`/subscriptions/${subscriptionId}/receipts`),
   triggerRetry: (id: string) => request(`/subscriptions/${id}/retry`, { method: 'POST' }),

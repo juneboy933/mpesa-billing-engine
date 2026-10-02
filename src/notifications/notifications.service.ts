@@ -21,6 +21,7 @@ export class NotificationsService {
 
     constructor(
         @InjectQueue('webhook-delivery') private readonly deliveryQueue: Queue,
+        @InjectQueue('customer-sms') private readonly customerSmsQueue: Queue,
         private readonly prisma: PrismaService,
         private readonly merchantsService: MerchantsService,
         private readonly cradleVoices: CradleVoicesService,
@@ -28,6 +29,22 @@ export class NotificationsService {
 
     async sendSms(message: string, phoneNumbers: string[]) {
         return await this.cradleVoices.sendSms(message, phoneNumbers);
+    }
+
+    async queueSms(message: string, phoneNumber: string, deduplicationId: string) {
+        const jobId = `sms-${crypto.createHash('sha256').update(deduplicationId).digest('hex')}`;
+        await this.customerSmsQueue.add(
+            'send-sms',
+            { message, phoneNumber },
+            {
+                jobId,
+                attempts: 5,
+                backoff: { type: 'exponential', delay: 2000 },
+                removeOnComplete: true,
+                removeOnFail: false,
+            },
+        );
+        return { queued: true };
     }
 
     async send(merchantId: string, eventType: WebhookEventType, data: Record< string, unknown >) {

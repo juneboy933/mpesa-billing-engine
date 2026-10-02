@@ -127,3 +127,32 @@ h1, h2, h3, p { margin-top: 0; }.hero-copy h1 { max-width: 620px; margin: 21px 0
 }
 .pagination-controls { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 0 2px; color: #78867d; font-size: 11px; }
 .pagination-controls button:disabled { opacity: .4; cursor: default; }
+.member-link-notice { margin: -12px 0 18px; padding: 12px 15px; color: #246b51; border: 1px solid #cfe2d1; border-radius: 7px; background: #f0f8ed; font-size: 12px; }
+.member-portal-wrap { min-height: 100vh; padding: 20px; background: var(--paper); }
+.member-portal-brand { display: flex; max-width: 680px; align-items: center; gap: 10px; margin: 0 auto 22px; color: var(--ink); font: 800 17px var(--display); }
+.member-portal-brand > span:last-child { margin-left: auto; color: var(--muted); font: 500 10px var(--mono); text-transform: uppercase; }
+.member-portal-card { max-width: 680px; margin: auto; padding: clamp(22px, 6vw, 38px); border: 1px solid var(--line); border-radius: 12px; background: #fff; box-shadow: 0 20px 50px rgba(42,62,47,.06); }
+.member-portal-heading { display: flex; align-items: center; justify-content: space-between; gap: 14px; }
+.member-status { padding: 6px 9px; color: #246b51; border-radius: 99px; background: #edf5e9; font: 500 9px var(--mono); }
+.member-status.retrying, .member-status.past_due { color: #985e2d; background: #fff4e7; }
+.member-status.cancelled { color: #a34e3d; background: #fff0ec; }
+.member-portal-card h1 { margin: 20px 0 4px; color: var(--ink); font: 800 clamp(27px, 6vw, 38px)/1.08 var(--display); letter-spacing: -1px; }
+.member-plan-price { color: var(--green); font: 800 22px var(--display); }
+.member-plan-price span { color: var(--muted); font: 500 12px var(--mono); }
+.member-next-payment { display: flex; align-items: center; gap: 13px; margin: 24px 0 18px; padding: 15px; border: 1px solid var(--line); border-radius: 8px; background: #fbfcf9; }
+.member-next-icon { display: grid; width: 39px; height: 39px; flex: none; place-items: center; color: var(--green); border-radius: 8px; background: #edf5e9; }
+.member-next-payment small, .member-next-payment b { display: block; }
+.member-next-payment small { margin-bottom: 5px; color: var(--muted); font-size: 10px; }
+.member-next-payment b { color: var(--ink); font-size: 13px; }
+.member-pay-button { width: 100%; min-height: 48px; }
+.member-cancelled-note { margin: 14px 0; color: #a34e3d; font-size: 12px; }
+.member-feedback { display: flex; align-items: center; gap: 8px; margin: 13px 0; padding: 11px 13px; border-radius: 7px; font-size: 11px; line-height: 1.5; }
+.member-feedback.success { color: #246b51; background: #edf5e9; }
+.member-feedback.error { color: #a34e3d; background: #fff0ec; }
+.member-history { margin-top: 28px; }
+.member-attempt { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 13px 0; border-bottom: 1px solid #edf0eb; }
+.member-attempt > div:last-child { text-align: right; }
+.member-attempt b, .member-attempt small { display: block; }
+.member-attempt b { font-size: 11px; }
+.member-attempt small { margin-top: 4px; color: var(--muted); font-size: 9px; }
+.member-expiry { margin: 21px 0 0; color: #89948b; font-size: 10px; text-align: center; }

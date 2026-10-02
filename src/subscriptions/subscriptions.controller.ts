@@ -3,6 +3,7 @@ import { SubscriptionsService } from './subscriptions.service';
 import type { Request } from 'express';
 import { CreateSubscriptionDto } from './dto/create-subscription.dto';
 import { ApiOperation, ApiTags, ApiResponse, ApiSecurity } from '@nestjs/swagger';
+import { MemberPortalService } from './member-portal.service';
 
 interface AuthenticatedRequest extends Request {
     merchant: { id: string };
@@ -11,7 +12,10 @@ interface AuthenticatedRequest extends Request {
 @ApiTags('subscriptions')
 @Controller('subscriptions')
 export class SubscriptionsController {
-    constructor(private readonly subscriptionsService: SubscriptionsService) {}
+    constructor(
+        private readonly subscriptionsService: SubscriptionsService,
+        private readonly memberPortal: MemberPortalService,
+    ) {}
 
     @Post()
     @ApiSecurity('api-key')
@@ -51,6 +55,17 @@ export class SubscriptionsController {
         @Param('subscriptionId') subscriptionId: string,
     ) {
         return await this.subscriptionsService.getReceipts(req.merchant.id, subscriptionId);
+    }
+
+    @Post(':subscriptionId/member-link')
+    @ApiSecurity('api-key')
+    @ApiOperation({ summary: 'Send the member an SMS link to view subscription and payment history' })
+    @ApiResponse({ status: 201, description: 'Expiring member link queued by SMS' })
+    async sendMemberPortalLink(
+        @Req() req: AuthenticatedRequest,
+        @Param('subscriptionId') subscriptionId: string,
+    ) {
+        return this.memberPortal.issueLinkAndSendSms(req.merchant.id, subscriptionId);
     }
 
     @Get(':subscriptionId/receipts/:receiptId')

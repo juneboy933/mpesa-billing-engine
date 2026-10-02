@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { SubscriptionsController } from './subscriptions.controller';
 import { SubscriptionsService } from './subscriptions.service';
+import { MemberPortalService } from './member-portal.service';
 
 describe('SubscriptionsController', () => {
   let controller: SubscriptionsController;
@@ -23,6 +24,7 @@ describe('SubscriptionsController', () => {
             cancelSubscription: jest.fn(),
           },
         },
+        { provide: MemberPortalService, useValue: { issueLinkAndSendSms: jest.fn() } },
       ],
     }).compile();
 
@@ -53,5 +55,14 @@ describe('SubscriptionsController', () => {
 
     expect((controller as any).subscriptionsService.payNow).toHaveBeenCalledWith('merchant_1', 'sub_1');
     expect(result).toBe(payment);
+  });
+
+  it('sends an expiring member portal link by SMS for a merchant-owned subscription', async () => {
+    const req = { merchant: { id: 'merchant_1' } } as any;
+    const memberPortal = (controller as any).memberPortal;
+    memberPortal.issueLinkAndSendSms.mockResolvedValue({ message: 'queued' });
+
+    await expect(controller.sendMemberPortalLink(req, 'sub_1')).resolves.toEqual({ message: 'queued' });
+    expect(memberPortal.issueLinkAndSendSms).toHaveBeenCalledWith('merchant_1', 'sub_1');
   });
 });

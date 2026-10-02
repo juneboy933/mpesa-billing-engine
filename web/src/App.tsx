@@ -13,6 +13,7 @@ import { PlansPage } from './pages/PlansPage'
 import { RecoveryPage } from './pages/RecoveryPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { SubscriptionsPage } from './pages/SubscriptionsPage'
+import { MemberPortalPage } from './pages/MemberPortalPage'
 import './App.css'
 import { ErrorState, LoadingState } from './components/States'
 
@@ -23,6 +24,7 @@ function App() {
         <Route path="/" element={<HomePage />} />
         <Route path="/onboarding" element={<OnboardingPage />} />
         <Route path="/signin" element={<SignInPage />} />
+        <Route path="/member/:token" element={<MemberPortalPage />} />
         <Route path="/dashboard" element={<Protected><DashboardPage /></Protected>} />
         <Route path="/plans" element={<Protected><PlansPage /></Protected>} />
         <Route path="/subscriptions" element={<Protected><SubscriptionsPage /></Protected>} />

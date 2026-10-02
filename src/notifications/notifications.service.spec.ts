@@ -11,6 +11,7 @@ describe('NotificationsService', () => {
     webhookDelivery: { create: jest.Mock };
   };
   let queue: { add: jest.Mock };
+  let smsQueue: { add: jest.Mock };
   let merchantsService: { findWebhookConfig: jest.Mock };
   let cradleVoices: { sendSms: jest.Mock };
 
@@ -21,6 +22,7 @@ describe('NotificationsService', () => {
       },
     };
     queue = { add: jest.fn() };
+    smsQueue = { add: jest.fn() };
     merchantsService = { findWebhookConfig: jest.fn() };
     cradleVoices = { sendSms: jest.fn() };
 
@@ -30,6 +32,7 @@ describe('NotificationsService', () => {
         { provide: PrismaService, useValue: prisma },
         { provide: MerchantsService, useValue: merchantsService },
         { provide: 'BullQueue_webhook-delivery', useValue: queue },
+        { provide: 'BullQueue_customer-sms', useValue: smsQueue },
         { provide: CradleVoicesService, useValue: cradleVoices },
       ],
     }).compile();
@@ -75,5 +78,19 @@ describe('NotificationsService', () => {
     await expect(service.sendSms('Your code is 482913.', ['254700000000']))
       .resolves.toEqual({ accepted: true });
     expect(cradleVoices.sendSms).toHaveBeenCalledWith('Your code is 482913.', ['254700000000']);
+  });
+
+  it('queues member SMS with retries and a non-reversible deduplication identifier', async () => {
+    await service.queueSms('Your link', '254700000000', 'member-link:token-record-1');
+
+    expect(smsQueue.add).toHaveBeenCalledWith('send-sms', {
+      message: 'Your link',
+      phoneNumber: '254700000000',
+    }, expect.objectContaining({
+      jobId: expect.stringMatching(/^sms-[a-f0-9]{64}$/),
+      attempts: 5,
+      removeOnComplete: true,
+      removeOnFail: false,
+    }));
   });
 });
