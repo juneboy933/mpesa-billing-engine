@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../../redis/redis.module';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
+import { createHash } from 'crypto';
 import { CreateStkDto } from '../dto/stk.dto';
 import { normalizePhone } from '../../common/utils/phone.util';
 
@@ -35,7 +36,7 @@ export class StkPushRejectedError extends Error {
     }
 }
 
-const TOKEN_CACHE_KEY = 'daraja:access_token';
+const TOKEN_CACHE_PREFIX = 'daraja:access_token';
 
 @Injectable()
 export class DarajaService {
@@ -46,17 +47,52 @@ export class DarajaService {
         private readonly config: ConfigService,
     ) {}
 
-    async getAccessToken(credentials?: MerchantCredentials) {
-        const tokenUrl = this.config.get('MPESA_TOKEN_URL');
-        const consumer = credentials?.consumerKey ?? this.config.get('CONSUMER_KEY');
-        const secret = credentials?.consumerSecret ?? this.config.get('CONSUMER_SECRET');
-
-        if(!tokenUrl || !consumer || !secret) {
-            throw new InternalServerErrorException('Missing tokenUrl or consumer key or consumer secret in your environment variables');
+    private localCredentials(): MerchantCredentials {
+        const nodeEnv = this.config.get<string>('NODE_ENV');
+        if (nodeEnv !== 'development' && nodeEnv !== 'test') {
+            throw new InternalServerErrorException('Merchant M-Pesa credentials are required outside local development and tests');
         }
 
+        const consumerKey = this.config.get<string>('CONSUMER_KEY');
+        const consumerSecret = this.config.get<string>('CONSUMER_SECRET');
+        const shortcode = this.config.get<string>('SHORT_CODE');
+        const passkey = this.config.get<string>('PASSKEY');
+        if (!consumerKey || !consumerSecret || !shortcode || !passkey) {
+            throw new InternalServerErrorException('Local Daraja test credentials are incomplete');
+        }
+
+        return { consumerKey, consumerSecret, shortcode, passkey };
+    }
+
+    private tokenCacheKey(tokenUrl: string, consumerKey: string, consumerSecret: string) {
+        const fingerprint = createHash('sha256')
+            .update(tokenUrl)
+            .update('\0')
+            .update(consumerKey)
+            .update('\0')
+            .update(consumerSecret)
+            .digest('hex');
+        return `${TOKEN_CACHE_PREFIX}:${fingerprint}`;
+    }
+
+    async getAccessToken(credentials?: MerchantCredentials) {
+        const tokenUrl = this.config.get('MPESA_TOKEN_URL');
+        if (!tokenUrl) {
+            throw new InternalServerErrorException('Missing M-Pesa token URL');
+        }
+
+        const resolvedCredentials = credentials ?? this.localCredentials();
+        const consumer = resolvedCredentials.consumerKey;
+        const secret = resolvedCredentials.consumerSecret;
+
+        if (!consumer || !secret) {
+            throw new InternalServerErrorException('M-Pesa consumer key and secret are required');
+        }
+
+        const cacheKey = this.tokenCacheKey(tokenUrl, consumer, secret);
+
         try {
-            const cached = await this.redis.get(TOKEN_CACHE_KEY);
+            const cached = await this.redis.get(cacheKey);
             if(cached) return cached;
         } catch (error) {
             this.logger.warn(`Redis unavailable for token cache, fetching fresh: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -75,7 +111,7 @@ export class DarajaService {
             const expiresIn = Number(result.data.expires_in);
 
             try {
-                await this.redis.set(TOKEN_CACHE_KEY, token, 'EX', expiresIn - 60);
+                await this.redis.set(cacheKey, token, 'EX', Math.max(1, Math.floor(expiresIn - 60)));
             } catch (error) {
                 this.logger.warn(`Failed to cache token in Redis: ${error instanceof Error ? error.message : 'Unknown error'}`);
             }
@@ -116,8 +152,9 @@ export class DarajaService {
     }
 
     generatePassword(shortcode?: string, passkey?: string) {
-        const shortCode = shortcode ?? this.config.get('SHORT_CODE');
-        const configuredPasskey = passkey ?? this.config.get('PASSKEY');
+        const local = shortcode && passkey ? undefined : this.localCredentials();
+        const shortCode = shortcode ?? local?.shortcode;
+        const configuredPasskey = passkey ?? local?.passkey;
 
         if(!shortCode || !configuredPasskey) {
             throw new InternalServerErrorException('Missing shortCode or passkey in your environment variables');
@@ -131,16 +168,17 @@ export class DarajaService {
 
     async triggerStk(dto: CreateStkDto, credentials?: MerchantCredentials): Promise <StkResponse> {
         const stkPushUrl = this.config.get('STK_PUSH_URL');
-        const shortCode = credentials?.shortcode ?? this.config.get('SHORT_CODE');
         const callback = this.config.get('MPESA_CALLBACK_URL');
+        const resolvedCredentials = credentials ?? this.localCredentials();
+        const shortCode = resolvedCredentials.shortcode;
 
         if(!stkPushUrl || !shortCode || !callback) {
             throw new InternalServerErrorException('Missing stkPushUrl or shortCode or callback from the environment variables');
         }
 
-        const token = await this.getAccessToken(credentials);
+        const token = await this.getAccessToken(resolvedCredentials);
         const timestamp = this.generateTimestamp();
-        const password = this.generatePassword(shortCode, credentials?.passkey);
+        const password = this.generatePassword(shortCode, resolvedCredentials.passkey);
 
         const normalizedPhone = normalizePhone(dto.phone);
         const payload = {

@@ -16,6 +16,7 @@ describe('DarajaService', () => {
       get: jest.fn((key: string) => {
         const values: Record<string, string> = {
           MPESA_TOKEN_URL: 'https://example.com/token',
+          NODE_ENV: 'test',
           CONSUMER_KEY: 'consumer-key',
           CONSUMER_SECRET: 'consumer-secret',
           SHORT_CODE: '600123',
@@ -49,7 +50,7 @@ describe('DarajaService', () => {
     const result = await service.getAccessToken();
 
     expect(result).toBe('cached-token');
-    expect(redis.get).toHaveBeenCalledWith('daraja:access_token');
+    expect(redis.get).toHaveBeenCalledWith(expect.stringMatching(/^daraja:access_token:[a-f0-9]{64}$/));
     expect(axiosGet).not.toHaveBeenCalled();
   });
 
@@ -62,7 +63,40 @@ describe('DarajaService', () => {
     const result = await service.getAccessToken();
 
     expect(result).toBe('fresh-token');
-    expect(redis.set).toHaveBeenCalledWith('daraja:access_token', 'fresh-token', 'EX', 3540);
+    expect(redis.set).toHaveBeenCalledWith(expect.stringMatching(/^daraja:access_token:[a-f0-9]{64}$/), 'fresh-token', 'EX', 3540);
+  });
+
+  it('uses a separate token cache key for each merchant credential pair', async () => {
+    redis.get.mockResolvedValue(null);
+    const axiosGet = jest.spyOn(axios, 'get');
+    axiosGet
+      .mockResolvedValueOnce({ data: { access_token: 'merchant-a-token', expires_in: '3600' } } as any)
+      .mockResolvedValueOnce({ data: { access_token: 'merchant-b-token', expires_in: '3600' } } as any);
+
+    const merchantA = { consumerKey: 'key-a', consumerSecret: 'secret-a', shortcode: '600111', passkey: 'pass-a' };
+    const merchantB = { consumerKey: 'key-b', consumerSecret: 'secret-b', shortcode: '600222', passkey: 'pass-b' };
+
+    await expect(service.getAccessToken(merchantA)).resolves.toBe('merchant-a-token');
+    await expect(service.getAccessToken(merchantB)).resolves.toBe('merchant-b-token');
+
+    const cacheKeys = redis.set.mock.calls.map(([key]) => key);
+    expect(cacheKeys[0]).not.toBe(cacheKeys[1]);
+    expect(cacheKeys.every((key) => String(key).startsWith('daraja:access_token:'))).toBe(true);
+  });
+
+  it('does not use shared environment credentials outside local development and tests', async () => {
+    config.get.mockImplementation((key: string) => ({
+      NODE_ENV: 'production',
+      MPESA_TOKEN_URL: 'https://example.com/token',
+      CONSUMER_KEY: 'shared-key',
+      CONSUMER_SECRET: 'shared-secret',
+      SHORT_CODE: '600123',
+      PASSKEY: 'passkey',
+    }[key]));
+    const axiosGet = jest.spyOn(axios, 'get');
+
+    await expect(service.getAccessToken()).rejects.toThrow('Merchant M-Pesa credentials are required');
+    expect(axiosGet).not.toHaveBeenCalled();
   });
 
   it('generates the Daraja password from the short code, passkey, and timestamp', () => {
